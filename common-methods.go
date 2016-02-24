@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/minio/mc/pkg/console"
 	"github.com/minio/minio/pkg/probe"
 )
 
@@ -114,7 +115,19 @@ func newClientFromAlias(alias string, urlStr string) (Client, *probe.Error) {
 	// credentials from the match found in the config file.
 	s3Config := new(Config)
 	s3Config.AccessKey = hostCfg.AccessKey
-	s3Config.SecretKey = hostCfg.SecretKey
+
+	// secretKey retrieved from the environement overrides the one
+	// present in the config file
+	if secretKeyEnv := os.Getenv("MC_SECRET_" + s3Config.AccessKey); isValidSecretKey(secretKeyEnv) {
+		s3Config.SecretKey = secretKeyEnv
+	} else {
+		if len(secretKeyEnv) > 0 {
+			console.Errorln("A secret key associated to `" + alias + "' is found in your environment " +
+				"but not suitable for use. Falling back to the standard config.")
+		}
+		s3Config.SecretKey = hostCfg.SecretKey
+	}
+
 	s3Config.Signature = hostCfg.API
 	s3Config.AppName = "mc"
 	s3Config.AppVersion = mcVersion
