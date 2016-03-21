@@ -1,5 +1,5 @@
 /*
- * Minio Client (C) 2015 Minio, Inc.
+ * Minio Client (C) 2015, 2016 Minio, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ func checkMirrorSyntax(ctx *cli.Context) {
 	}
 }
 
-func deltaSourceTargets(sourceURL string, targetURL string, isForce bool, mirrorURLsCh chan<- mirrorURLs) {
+func deltaSourceTargets(sourceURL string, targetURL string, isForce bool, isFake bool, mirrorURLsCh chan<- mirrorURLs) {
 	// source and targets are always directories
 	sourceSeparator := string(newURL(sourceURL).Separator)
 	if !strings.HasSuffix(sourceURL, sourceSeparator) {
@@ -107,19 +107,27 @@ func deltaSourceTargets(sourceURL string, targetURL string, isForce bool, mirror
 
 	defer close(mirrorURLsCh)
 
-	objectDifferenceTarget, err := objectDifferenceFactory(targetAlias, targetURL)
-	if err != nil {
-		mirrorURLsCh <- mirrorURLs{Error: err.Trace(targetAlias, targetURL)}
-		return
-	}
-
 	sourceClient, err := newClientFromAlias(sourceAlias, sourceURL)
 	if err != nil {
 		mirrorURLsCh <- mirrorURLs{Error: err.Trace(sourceAlias, sourceURL)}
 		return
 	}
 
-	for sourceContent := range sourceClient.List(true, false) {
+	targetClnt, err := newClientFromAlias(targetAlias, targetURL)
+	if err != nil {
+		mirrorURLsCh <- mirrorURLs{Error: err.Trace(targetAlias, targetURL)}
+		return
+	}
+
+	// Setup object difference.
+	objectDifferenceTarget := objectDifferenceFactory(targetClnt)
+
+	// Set default values for listing.
+	isRecursive := true   // recursive is always true for diff.
+	isIncomplete := false // we will not compare any incomplete objects.
+
+	// List all the sources, compare using 'objectDifference' function.
+	for sourceContent := range sourceClient.List(isRecursive, isIncomplete) {
 		if sourceContent.Err != nil {
 			mirrorURLsCh <- mirrorURLs{
 				Error: sourceContent.Err.Trace(sourceClient.GetURL().String()),
@@ -129,27 +137,27 @@ func deltaSourceTargets(sourceURL string, targetURL string, isForce bool, mirror
 		if sourceContent.Type.IsDir() {
 			continue
 		}
-		suffix := strings.TrimPrefix(sourceContent.URL.String(), sourceURL)
-		differ, err := objectDifferenceTarget(suffix, sourceContent.Type, sourceContent.Size)
+		sourceSuffix := strings.TrimPrefix(sourceContent.URL.String(), sourceURL)
+		differ, err := objectDifferenceTarget(targetURL, sourceSuffix, sourceContent.Type, sourceContent.Size, sourceContent.Time)
 		if err != nil {
 			mirrorURLsCh <- mirrorURLs{Error: err.Trace(sourceContent.URL.String())}
 			continue
 		}
-		if differ == differNone {
-			// no difference, continue
+		if differ == differInNone {
+			// No difference, continue.
 			continue
 		}
-		if differ == differType {
-			mirrorURLsCh <- mirrorURLs{Error: errInvalidTarget(suffix)}
+		if differ == differInType {
+			mirrorURLsCh <- mirrorURLs{Error: errInvalidTarget(sourceSuffix)}
 			continue
 		}
-		if differ == differSize && !isForce {
-			// size differs and force not set
+		if differ == differInSize && !isForce && !isFake {
+			// Size differs and force not set
 			mirrorURLsCh <- mirrorURLs{Error: errOverWriteNotAllowed(sourceContent.URL.String())}
 			continue
 		}
 		// either available only in source or size differs and force is set
-		targetPath := urlJoinPath(targetURL, suffix)
+		targetPath := urlJoinPath(targetURL, sourceSuffix)
 		targetContent := &clientContent{URL: *newURL(targetPath)}
 		mirrorURLsCh <- mirrorURLs{
 			SourceAlias:   sourceAlias,
@@ -160,8 +168,8 @@ func deltaSourceTargets(sourceURL string, targetURL string, isForce bool, mirror
 	}
 }
 
-func prepareMirrorURLs(sourceURL string, targetURL string, isForce bool) <-chan mirrorURLs {
+func prepareMirrorURLs(sourceURL string, targetURL string, isForce bool, isFake bool) <-chan mirrorURLs {
 	mirrorURLsCh := make(chan mirrorURLs)
-	go deltaSourceTargets(sourceURL, targetURL, isForce, mirrorURLsCh)
+	go deltaSourceTargets(sourceURL, targetURL, isForce, isFake, mirrorURLsCh)
 	return mirrorURLsCh
 }

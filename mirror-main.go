@@ -1,5 +1,5 @@
 /*
- * Minio Client, (C) 2015 Minio, Inc.
+ * Minio Client, (C) 2015, 2016 Minio, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,10 @@ var (
 			Name:  "force",
 			Usage: "Force overwrite of an existing target(s).",
 		},
+		cli.BoolFlag{
+			Name:  "fake",
+			Usage: "Perform a fake mirror operation.",
+		},
 	}
 )
 
@@ -71,6 +75,13 @@ EXAMPLES:
 
    3. Mirror a bucket from aliased Amazon S3 cloud storage to a folder on Windows.
       $ mc {{.Name}} s3\documents\2014\ C:\backup\2014
+
+   4. Mirror a bucket from aliased Amazon S3 cloud storage to a local folder use '--force' to overwrite destination.
+      $ mc {{.Name}} --force s3/miniocloud miniocloud-backup
+
+   5. Fake mirror a bucket from Minio cloud storage to a bucket on Amazon S3 cloud storage.
+      $ mc {{.Name}} --fake play/photos/2014 s3/backup-photos/2014
+
 `,
 }
 
@@ -172,7 +183,7 @@ func doMirrorFake(sURLs mirrorURLs, progressReader *progressBar) mirrorURLs {
 }
 
 // doPrepareMirrorURLs scans the source URL and prepares a list of objects for mirroring.
-func doPrepareMirrorURLs(session *sessionV6, isForce bool, trapCh <-chan bool) {
+func doPrepareMirrorURLs(session *sessionV6, isForce bool, isFake bool, trapCh <-chan bool) {
 	sourceURL := session.Header.CommandArgs[0] // first one is source.
 	targetURL := session.Header.CommandArgs[1]
 	var totalBytes int64
@@ -186,7 +197,7 @@ func doPrepareMirrorURLs(session *sessionV6, isForce bool, trapCh <-chan bool) {
 		scanBar = scanBarFactory()
 	}
 
-	URLsCh := prepareMirrorURLs(sourceURL, targetURL, isForce)
+	URLsCh := prepareMirrorURLs(sourceURL, targetURL, isForce, isFake)
 	done := false
 	for done == false {
 		select {
@@ -235,10 +246,13 @@ func doPrepareMirrorURLs(session *sessionV6, isForce bool, trapCh <-chan bool) {
 // Session'fied mirror command.
 func doMirrorSession(session *sessionV6) {
 	isForce := session.Header.CommandBoolFlags["force"]
+	isFake := session.Header.CommandBoolFlags["fake"]
+
+	// Initialize signal trap.
 	trapCh := signalTrap(os.Interrupt, syscall.SIGTERM)
 
 	if !session.HasData() {
-		doPrepareMirrorURLs(session, isForce, trapCh)
+		doPrepareMirrorURLs(session, isForce, isFake, trapCh)
 	}
 
 	// Enable accounting reader by default.
@@ -294,8 +308,7 @@ func doMirrorSession(session *sessionV6) {
 					// For all non critical errors we can continue for the
 					// remaining files.
 					switch sURLs.Error.ToGoError().(type) {
-					// Handle this specifically for filesystem related
-					// errors.
+					// Handle this specifically for filesystem related errors.
 					case BrokenSymlink:
 						continue
 					case TooManyLevelsSymlink:
@@ -311,14 +324,14 @@ func doMirrorSession(session *sessionV6) {
 					}
 					// For critical errors we should exit. Session
 					// can be resumed after the user figures out
-					// the  problem.
+					// the problem.
 					session.CloseAndDie()
 				}
 			}
 		}
 	}()
 
-	// Loop through all urls.
+	// Loop through all urls and mirror.
 	for urlScanner.Scan() {
 		var sURLs mirrorURLs
 		// Unmarshal copyURLs from each line.
@@ -327,7 +340,13 @@ func doMirrorSession(session *sessionV6) {
 		if isCopied(sURLs.SourceContent.URL.String()) {
 			statusCh <- doMirrorFake(sURLs, progressReader)
 		} else {
-			statusCh <- doMirror(sURLs, progressReader, accntReader)
+			// Mirror is initiated if its not a fake run.
+			if !isFake {
+				statusCh <- doMirror(sURLs, progressReader, accntReader)
+			} else {
+				// fake Mirror is initiated if its a fake run.
+				statusCh <- doMirrorFake(sURLs, progressReader)
+			}
 		}
 	}
 
@@ -338,7 +357,7 @@ func doMirrorSession(session *sessionV6) {
 	wg.Wait()
 
 	if !globalQuiet && !globalJSON {
-		if progressReader.ProgressBar.Total > 0 {
+		if progressReader.ProgressBar.Get() > 0 {
 			progressReader.ProgressBar.Finish()
 		}
 	} else {
@@ -374,7 +393,9 @@ func mainMirror(ctx *cli.Context) {
 
 	// Set command flags from context.
 	isForce := ctx.Bool("force")
+	isFake := ctx.Bool("fake")
 	session.Header.CommandBoolFlags["force"] = isForce
+	session.Header.CommandBoolFlags["fake"] = isFake
 
 	// extract URLs.
 	session.Header.CommandArgs = ctx.Args()
