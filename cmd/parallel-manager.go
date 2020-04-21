@@ -81,6 +81,7 @@ func (p *ParallelManager) addWorker() {
 			// Execute the task and send the result
 			// to result channel.
 			p.resultCh <- fn()
+			atomic.AddUint32(&processedCount, 1)
 		}
 	}()
 }

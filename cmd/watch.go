@@ -17,6 +17,7 @@
 package cmd
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -171,21 +172,28 @@ func (w *Watcher) Join(client Client, recursive bool) *probe.Error {
 	// and sent then to eventsChan and errorsChan
 	go func() {
 		defer w.wg.Done()
-
+		start := time.Now()
+		count := 0
 		for {
-			select {
-			case event, ok := <-wo.Events():
-				if !ok {
-					return
-				}
-				w.eventInfoChan <- event
-			case err, ok := <-wo.Errors():
-				if !ok {
-					return
-				}
+			for time.Since(start) <= time.Second {
+				select {
+				case event, ok := <-wo.Events():
+					if !ok {
+						return
+					}
+					count++
+					w.eventInfoChan <- event
+				case err, ok := <-wo.Errors():
+					if !ok {
+						return
+					}
 
-				w.errorChan <- err
+					w.errorChan <- err
+				}
 			}
+			fmt.Println("Number of events received from MinIO Server / second is ", count)
+			count = 0
+			start = time.Now()
 		}
 	}()
 
