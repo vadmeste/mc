@@ -17,13 +17,18 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/minio/mc/pkg/probe"
 )
 
-const (
+var (
 	// Maximum number of parallel workers
 	maxParallelWorkers = 128
 
@@ -46,7 +51,7 @@ type ParallelManager struct {
 	wg *sync.WaitGroup
 
 	// Current threads number
-	workersNum uint32
+	workersNum int64
 
 	// Channel to receive tasks to run
 	queueCh chan func() URLs
@@ -58,14 +63,14 @@ type ParallelManager struct {
 
 // addWorker creates a new worker to process tasks
 func (p *ParallelManager) addWorker() {
-	if atomic.LoadUint32(&p.workersNum) >= maxParallelWorkers {
+	if atomic.LoadInt64(&p.workersNum) >= int64(maxParallelWorkers) {
 		// Number of maximum workers is reached, no need to
 		// to create a new one.
 		return
 	}
 
 	// Update number of threads
-	atomic.AddUint32(&p.workersNum, 1)
+	atomic.AddInt64(&p.workersNum, 1)
 
 	// Start a new worker
 	p.wg.Add(1)
@@ -151,13 +156,25 @@ func newParallelManager(resultCh chan URLs) (*ParallelManager, chan func() URLs)
 		resultCh:      resultCh,
 	}
 
-	// Start with runtime.NumCPU().
-	for i := 0; i < runtime.NumCPU(); i++ {
-		p.addWorker()
+	if v := os.Getenv("CONCURRENT_WORKERS"); v != "" {
+		// Reinitialize maximum parallel workers
+		maxParallelWorkers = 2 ^ 16
+		max, err := strconv.Atoi(v)
+		fatalIf(probe.NewError(err), "Unable to parse CONCURRENT_WORKERS")
+		if max <= 0 || max > maxParallelWorkers {
+			fatalIf(probe.NewError(fmt.Errorf("out of range value")), "Unable to parse CONCURRENT_WORKERS")
+		}
+		for i := 0; i < max; i++ {
+			p.addWorker()
+		}
+	} else {
+		// Start with runtime.NumCPU().
+		for i := 0; i < runtime.NumCPU(); i++ {
+			p.addWorker()
+		}
+		// Start monitoring tasks progress
+		p.monitorProgress()
 	}
-
-	// Start monitoring tasks progress
-	p.monitorProgress()
 
 	return p, p.queueCh
 }
