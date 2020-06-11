@@ -143,7 +143,7 @@ func statURL(targetURL string, isIncomplete, isRecursive bool, encKeyDB map[stri
 		prefixPath = prefixPath[:strings.LastIndex(prefixPath, separator)+1]
 	}
 	var cErr error
-	for content := range clnt.List(isRecursive, isIncomplete, false, DirNone) {
+	for content := range clnt.List(isRecursive, isIncomplete, false, false, DirNone) {
 		if content.Err != nil {
 			switch content.Err.ToGoError().(type) {
 			// handle this specifically for filesystem related errors.

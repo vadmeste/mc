@@ -48,7 +48,7 @@ const defaultMultipartThreadsNum = 4
 type Client interface {
 	// Common operations
 	Stat(isIncomplete, isPreserve bool, sse encrypt.ServerSide) (content *ClientContent, err *probe.Error)
-	List(isRecursive, isIncomplete, isFetchMeta bool, showDir DirOpt) <-chan *ClientContent
+	List(isRecursive, isIncomplete, isFetchMeta, includeVersions bool, showDir DirOpt) <-chan *ClientContent
 
 	// Bucket operations
 	MakeBucket(region string, ignoreExisting, withLock bool) *probe.Error
@@ -102,8 +102,10 @@ type Client interface {
 // ClientContent - Content container for content metadata
 type ClientContent struct {
 	URL               ClientURL
+	Key               string
 	Time              time.Time
 	Size              int64
+	VersionID         string
 	Type              os.FileMode
 	StorageClass      string
 	Metadata          map[string]string

@@ -107,7 +107,7 @@ func setLegalHold(urlStr string, lhold minio.LegalHoldStatus, isRecursive bool) 
 	alias, _, _ := mustExpandAlias(urlStr)
 	var cErr error
 	errorsFound := false
-	for content := range clnt.List(isRecursive, false, false, DirNone) {
+	for content := range clnt.List(isRecursive, false, false, false, DirNone) {
 		if content.Err != nil {
 			errorIf(content.Err.Trace(clnt.GetURL().String()), "Unable to list folder.")
 			cErr = exitStatus(globalErrorExitStatus) // Set the exit status.

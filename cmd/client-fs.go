@@ -503,7 +503,7 @@ func (f *fsClient) Remove(isIncomplete, isRemoveBucket, isBypass bool, contentCh
 }
 
 // List - list files and folders.
-func (f *fsClient) List(isRecursive, isIncomplete, isMetadata bool, showDir DirOpt) <-chan *ClientContent {
+func (f *fsClient) List(isRecursive, isIncomplete, isMetadata, _ bool, showDir DirOpt) <-chan *ClientContent {
 	contentCh := make(chan *ClientContent)
 	filteredCh := make(chan *ClientContent)
 

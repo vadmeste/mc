@@ -464,7 +464,7 @@ func mainSQL(ctx *cli.Context) error {
 			continue
 		}
 
-		for content := range clnt.List(ctx.Bool("recursive"), false, false, DirNone) {
+		for content := range clnt.List(ctx.Bool("recursive"), false, false, false, DirNone) {
 			if content.Err != nil {
 				errorIf(content.Err.Trace(url), "Unable to list on target `"+url+"`.")
 				continue

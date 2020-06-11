@@ -166,7 +166,7 @@ func prepareCopyURLsTypeC(sourceURL, targetURL string, isRecursive bool, encKeyD
 		}
 
 		isIncomplete := false
-		for sourceContent := range sourceClient.List(isRecursive, isIncomplete, false, DirNone) {
+		for sourceContent := range sourceClient.List(isRecursive, isIncomplete, false, false, DirNone) {
 			if sourceContent.Err != nil {
 				// Listing failed.
 				copyURLsCh <- URLs{Error: sourceContent.Err.Trace(sourceClient.GetURL().String())}

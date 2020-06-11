@@ -35,6 +35,18 @@ var (
 			Name:  "incomplete, I",
 			Usage: "list incomplete uploads",
 		},
+		cli.BoolFlag{
+			Name:  "versions, V",
+			Usage: "include versions in listing",
+		},
+		cli.BoolFlag{
+			Name:  "older",
+			Usage: "list objects older than the specified age",
+		},
+		cli.BoolFlag{
+			Name:  "newer",
+			Usage: "list objects more recent than the specified age",
+		},
 	}
 )
 
@@ -119,6 +131,7 @@ func mainList(ctx *cli.Context) error {
 	// Set command flags from context.
 	isRecursive := ctx.Bool("recursive")
 	isIncomplete := ctx.Bool("incomplete")
+	includeVersions := ctx.Bool("versions")
 
 	args := ctx.Args()
 	// mimic operating system tool behavior.
@@ -141,7 +154,7 @@ func mainList(ctx *cli.Context) error {
 			}
 		}
 
-		if e := doList(clnt, isRecursive, isIncomplete); e != nil {
+		if e := doList(clnt, isRecursive, isIncomplete, includeVersions); e != nil {
 			cErr = e
 		}
 	}

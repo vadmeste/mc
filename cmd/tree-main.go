@@ -215,7 +215,7 @@ func doTree(url string, level int, leaf bool, branchString string, depth int, in
 		return nil
 	}
 
-	for content := range clnt.List(false, false, false, DirNone) {
+	for content := range clnt.List(false, false, false, false, DirNone) {
 
 		if !includeFiles && !content.Type.IsDir() {
 			continue
@@ -275,7 +275,7 @@ func mainTree(ctx *cli.Context) error {
 			}
 			clnt, err := newClientFromAlias(targetAlias, targetURL)
 			fatalIf(err.Trace(targetURL), "Unable to initialize target `"+targetURL+"`.")
-			if e := doList(clnt, true, false); e != nil {
+			if e := doList(clnt, true, false, false); e != nil {
 				cErr = e
 			}
 		}

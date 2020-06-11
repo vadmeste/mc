@@ -33,3 +33,5 @@ require (
 	gopkg.in/ini.v1 v1.55.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 )
+
+// replace "github.com/minio/minio-go/v6" => "/home/anis/work/gospace/src/github.com/minio/minio-go"

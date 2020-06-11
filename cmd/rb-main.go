@@ -130,7 +130,7 @@ func deleteBucket(url string) *probe.Error {
 
 	go func() {
 		defer close(contentCh)
-		for content := range clnt.List(true, false, false, DirLast) {
+		for content := range clnt.List(true, false, false, false, DirLast) {
 			if content.Err != nil {
 				contentCh <- content
 				continue
@@ -218,7 +218,7 @@ func mainRemoveBucket(ctx *cli.Context) error {
 		}
 
 		isEmpty := true
-		for range clnt.List(true, false, false, DirNone) {
+		for range clnt.List(true, false, false, false, DirNone) {
 			isEmpty = false
 			break
 		}
