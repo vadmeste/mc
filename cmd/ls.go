@@ -36,14 +36,15 @@ const (
 
 // contentMessage container for content message structure.
 type contentMessage struct {
-	Status    string    `json:"status"`
-	Filetype  string    `json:"type"`
-	Time      time.Time `json:"lastModified"`
-	Size      int64     `json:"size"`
-	Key       string    `json:"key"`
-	ETag      string    `json:"etag"`
-	VersionID string    `json:"versionID"`
-	URL       string    `json:"url,omitempty"`
+	Status         string    `json:"status"`
+	Filetype       string    `json:"type"`
+	Time           time.Time `json:"lastModified"`
+	Size           int64     `json:"size"`
+	Key            string    `json:"key"`
+	ETag           string    `json:"etag"`
+	VersionID      string    `json:"versionID"`
+	IsDeleteMarker bool      `json:"isDeleteMarker"`
+	URL            string    `json:"url,omitempty"`
 }
 
 // String colorized string message.
@@ -54,9 +55,14 @@ func (c contentMessage) String() string {
 		message += console.Colorize("Dir", c.Key)
 	} else {
 		if c.VersionID != "" {
-			message += "(" + c.VersionID + ")"
+			message += "[" + c.VersionID + "] "
 		}
-		message += console.Colorize("File", c.Key)
+		var prefix, suffix string
+		if c.IsDeleteMarker {
+			prefix = "\x1B[9m"
+			suffix = "\x1B[29m" // \e[0m"
+		}
+		message += console.Colorize("File", prefix+c.Key+suffix)
 	}
 	return message
 }
@@ -75,6 +81,7 @@ func parseContent(c *ClientContent) contentMessage {
 	content := contentMessage{}
 	content.Time = c.Time.Local()
 	content.VersionID = c.VersionID
+	content.IsDeleteMarker = c.IsDeleteMarker
 
 	// guess file type.
 	content.Filetype = func() string {

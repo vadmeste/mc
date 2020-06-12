@@ -106,6 +106,7 @@ type ClientContent struct {
 	Time              time.Time
 	Size              int64
 	VersionID         string
+	IsDeleteMarker    bool
 	Type              os.FileMode
 	StorageClass      string
 	Metadata          map[string]string

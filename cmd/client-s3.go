@@ -1335,7 +1335,6 @@ func (c *S3Client) listObjectWrapperV2(bucket, object string, isRecursive bool, 
 		if includeVersions {
 			versionsListing := c.api.ListObjectVersions(bucket, object, isRecursive, doneCh)
 			for version := range versionsListing {
-				fmt.Printf("-- (%v) -- %s\n", version.IsDeleteMarker, version.Key)
 				if version.Err != nil {
 					url := c.targetURL.Clone()
 					url.Path = c.joinPath(bucket, object)
@@ -1876,6 +1875,7 @@ func (c *S3Client) objectVersionInfo2ClientContent(bucket string, entry minio.Ob
 	content.URL = url
 	content.Key = entry.Key
 	content.VersionID = entry.VersionID
+	content.IsDeleteMarker = entry.IsDeleteMarker
 	content.Size = entry.Size
 	content.ETag = entry.ETag
 	content.Time = entry.LastModified
