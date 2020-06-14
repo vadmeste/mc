@@ -107,7 +107,7 @@ func getEncKeys(ctx *cli.Context) (map[string][]prefixSSEPair, *probe.Error) {
 func isAliasURLDir(aliasURL string, keys map[string][]prefixSSEPair) bool {
 	// If the target url exists, check if it is a directory
 	// and return immediately.
-	_, targetContent, err := url2Stat(aliasURL, false, keys)
+	_, targetContent, err := url2Stat(aliasURL, "", false, keys)
 	if err == nil {
 		return targetContent.Type.IsDir()
 	}
@@ -241,7 +241,7 @@ func getSourceStream(alias string, urlStr string, fetchStat bool, sse encrypt.Se
 			}
 			st.ETag = oinfo.ETag
 		} else {
-			st, err = sourceClnt.Stat(false, preserve, sse)
+			st, err = sourceClnt.Stat(false, preserve, "", sse)
 			if err != nil {
 				return nil, nil, err.Trace(alias, urlStr)
 			}
@@ -375,7 +375,7 @@ func getAllMetadata(sourceAlias, sourceURLStr string, srcSSE encrypt.ServerSide,
 	if err != nil {
 		return nil, err.Trace(sourceAlias, sourceURLStr)
 	}
-	st, err := sourceClnt.Stat(false, preserve, srcSSE)
+	st, err := sourceClnt.Stat(false, preserve, "", srcSSE)
 	if err != nil {
 		return nil, err.Trace(sourceAlias, sourceURLStr)
 	}

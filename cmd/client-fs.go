@@ -987,7 +987,7 @@ func (f *fsClient) SetAccess(access string, isJSON bool) *probe.Error {
 }
 
 // Stat - get metadata from path.
-func (f *fsClient) Stat(isIncomplete, isPreserve bool, sse encrypt.ServerSide) (content *ClientContent, err *probe.Error) {
+func (f *fsClient) Stat(isIncomplete, isPreserve bool, versionID string, sse encrypt.ServerSide) (content *ClientContent, err *probe.Error) {
 	st, err := f.fsStat(isIncomplete)
 	if err != nil {
 		return nil, err.Trace(f.PathURL.String())

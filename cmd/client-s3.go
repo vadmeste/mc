@@ -1389,7 +1389,7 @@ func (c *S3Client) statIncompleteUpload(bucket, object string) (*ClientContent, 
 
 // Stat - send a 'HEAD' on a bucket or object to fetch its metadata. It also returns
 // a DIR type content if a prefix does exist in the server.
-func (c *S3Client) Stat(isIncomplete, isPreserve bool, sse encrypt.ServerSide) (*ClientContent, *probe.Error) {
+func (c *S3Client) Stat(isIncomplete, isPreserve bool, versionID string, sse encrypt.ServerSide) (*ClientContent, *probe.Error) {
 	c.Lock()
 	defer c.Unlock()
 	bucket, object := c.url2BucketAndObject()
@@ -1420,7 +1420,7 @@ func (c *S3Client) Stat(isIncomplete, isPreserve bool, sse encrypt.ServerSide) (
 	//     - /path/to/empty_directory
 	//     - /path/to/empty_directory/
 
-	opts := minio.StatObjectOptions{}
+	opts := minio.StatObjectOptions{minio.GetObjectOptions{VersionID: ""}}
 	opts.ServerSideEncryption = sse
 
 	if !strings.HasSuffix(object, string(c.targetURL.Separator)) {
@@ -1442,11 +1442,11 @@ func (c *S3Client) Stat(isIncomplete, isPreserve bool, sse encrypt.ServerSide) (
 	// Prefix to pass to minio-go listing in order to fetch if a prefix exists
 	prefix := strings.TrimRight(object, string(c.targetURL.Separator))
 
-	for objectStat := range c.listObjectWrapperV2(bucket, prefix, nonRecursive, nil, false, false) {
+	for objectStat := range c.listObjectWrapperV2(bucket, prefix, nonRecursive, nil, false, versionID != "") {
 		if objectStat.Err != nil {
 			return nil, objectStat.Err
 		}
-		if strings.HasSuffix(objectStat.Key, string(c.targetURL.Separator)) {
+		if strings.HasSuffix(objectStat.Key, string(c.targetURL.Separator)) && objectStat.VersionID == versionID {
 			objectMetadata.URL = c.targetURL.Clone()
 			objectMetadata.Type = os.ModeDir
 			return objectMetadata, nil
@@ -1815,7 +1815,7 @@ func (c *S3Client) listIncompleteRecursiveInRoutineDirOpt(contentCh chan *Client
 	} else if strings.HasSuffix(object, string(c.targetURL.Separator)) {
 		// Get stat of given object is a directory.
 		isIncomplete := true
-		content, perr := c.Stat(isIncomplete, false, nil)
+		content, perr := c.Stat(isIncomplete, false, "", nil)
 		cContent = content
 		if perr != nil {
 			contentCh <- &ClientContent{Err: perr.Trace(bucket)}
@@ -1992,7 +1992,7 @@ func (c *S3Client) listRecursiveInRoutineDirOpt(contentCh chan *ClientContent, d
 	} else {
 		// Get stat of given object is a directory.
 		isIncomplete := false
-		content, perr := c.Stat(isIncomplete, false, nil)
+		content, perr := c.Stat(isIncomplete, false, "", nil)
 		if perr != nil {
 			contentCh <- &ClientContent{Err: perr.Trace(bucket)}
 			return

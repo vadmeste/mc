@@ -34,6 +34,10 @@ import (
 var (
 	rmFlags = []cli.Flag{
 		cli.BoolFlag{
+			Name:  "versions, V",
+			Usage: "include objects verions in the removal",
+		},
+		cli.BoolFlag{
 			Name:  "recursive, r",
 			Usage: "remove recursively",
 		},
@@ -196,9 +200,10 @@ func checkRmSyntax(ctx *cli.Context, encKeyDB map[string][]prefixSSEPair) {
 	}
 }
 
-func removeSingle(url string, isIncomplete, isFake, isForce, isBypass bool, olderThan, newerThan string, encKeyDB map[string][]prefixSSEPair) error {
+func removeSingle(url string, isIncomplete, isFake, isForce, isBypass, includeVersions bool, olderThan, newerThan string, encKeyDB map[string][]prefixSSEPair) error {
+
 	isRecursive := false
-	contents, pErr := statURL(url, isIncomplete, isRecursive, encKeyDB)
+	contents, pErr := statURL(url, isIncomplete, isRecursive, includeVersions, encKeyDB)
 	if pErr != nil {
 		errorIf(pErr.Trace(url), "Failed to remove `"+url+"`.")
 		return exitStatus(globalErrorExitStatus)
@@ -235,12 +240,14 @@ func removeSingle(url string, isIncomplete, isFake, isForce, isBypass bool, olde
 			errorIf(pErr.Trace(url), "Invalid argument `"+url+"`.")
 			return exitStatus(globalErrorExitStatus) // End of journey.
 		}
+
 		if !strings.HasSuffix(targetURL, string(clnt.GetURL().Separator)) && content.Type.IsDir() {
 			targetURL = targetURL + string(clnt.GetURL().Separator)
 		}
 
 		contentCh := make(chan *ClientContent, 1)
-		contentCh <- &ClientContent{URL: *newClientURL(targetURL)}
+		fmt.Println(content)
+		contentCh <- &ClientContent{URL: *newClientURL(targetURL), VersionID: content.VersionID}
 		close(contentCh)
 		isRemoveBucket := false
 		errorCh := clnt.Remove(isIncomplete, isRemoveBucket, isBypass, contentCh)
@@ -259,7 +266,7 @@ func removeSingle(url string, isIncomplete, isFake, isForce, isBypass bool, olde
 	return nil
 }
 
-func removeRecursive(url string, isIncomplete, isFake, isBypass bool, olderThan, newerThan string, encKeyDB map[string][]prefixSSEPair) error {
+func removeRecursive(url string, isIncomplete, isFake, isBypass, includeVersions bool, olderThan, newerThan string, encKeyDB map[string][]prefixSSEPair) error {
 	targetAlias, targetURL, _ := mustExpandAlias(url)
 	clnt, pErr := newClientFromAlias(targetAlias, targetURL)
 	if pErr != nil {
@@ -272,7 +279,7 @@ func removeRecursive(url string, isIncomplete, isFake, isBypass bool, olderThan,
 	errorCh := clnt.Remove(isIncomplete, isRemoveBucket, isBypass, contentCh)
 
 	isRecursive := true
-	for content := range clnt.List(isRecursive, isIncomplete, false, false, DirNone) {
+	for content := range clnt.List(isRecursive, isIncomplete, false, includeVersions, DirNone) {
 		if content.Err != nil {
 			errorIf(content.Err.Trace(url), "Failed to remove `"+url+"` recursively.")
 			switch content.Err.ToGoError().(type) {
@@ -357,6 +364,7 @@ func mainRm(ctx *cli.Context) error {
 	olderThan := ctx.String("older-than")
 	newerThan := ctx.String("newer-than")
 	isForce := ctx.Bool("force")
+	includeVersions := ctx.Bool("versions")
 
 	// Set color.
 	console.SetColor("Remove", color.New(color.FgGreen, color.Bold))
@@ -366,9 +374,9 @@ func mainRm(ctx *cli.Context) error {
 	// Support multiple targets.
 	for _, url := range ctx.Args() {
 		if isRecursive {
-			e = removeRecursive(url, isIncomplete, isFake, isBypass, olderThan, newerThan, encKeyDB)
+			e = removeRecursive(url, isIncomplete, isFake, isBypass, includeVersions, olderThan, newerThan, encKeyDB)
 		} else {
-			e = removeSingle(url, isIncomplete, isFake, isForce, isBypass, olderThan, newerThan, encKeyDB)
+			e = removeSingle(url, isIncomplete, isFake, isForce, isBypass, includeVersions, olderThan, newerThan, encKeyDB)
 		}
 
 		if rerr == nil {
@@ -384,9 +392,9 @@ func mainRm(ctx *cli.Context) error {
 	for scanner.Scan() {
 		url := scanner.Text()
 		if isRecursive {
-			e = removeRecursive(url, isIncomplete, isFake, isBypass, olderThan, newerThan, encKeyDB)
+			e = removeRecursive(url, isIncomplete, isFake, isBypass, includeVersions, olderThan, newerThan, encKeyDB)
 		} else {
-			e = removeSingle(url, isIncomplete, isFake, isForce, isBypass, olderThan, newerThan, encKeyDB)
+			e = removeSingle(url, isIncomplete, isFake, isForce, isBypass, includeVersions, olderThan, newerThan, encKeyDB)
 		}
 
 		if rerr == nil {

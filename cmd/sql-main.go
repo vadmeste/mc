@@ -446,7 +446,7 @@ func mainSQL(ctx *cli.Context) error {
 	URLs := ctx.Args()
 	writeHdr := true
 	for _, url := range URLs {
-		if _, targetContent, err := url2Stat(url, false, encKeyDB); err != nil {
+		if _, targetContent, err := url2Stat(url, "", false, encKeyDB); err != nil {
 			errorIf(err.Trace(url), "Unable to run sql for "+url+".")
 			continue
 		} else if !targetContent.Type.IsDir() {

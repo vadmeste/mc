@@ -54,7 +54,7 @@ const (
 func guessCopyURLType(sourceURLs []string, targetURL string, isRecursive bool, keys map[string][]prefixSSEPair) (copyURLsType, *probe.Error) {
 	if len(sourceURLs) == 1 { // 1 Source, 1 Target
 		sourceURL := sourceURLs[0]
-		_, sourceContent, err := url2Stat(sourceURL, false, keys)
+		_, sourceContent, err := url2Stat(sourceURL, "", false, keys)
 		if err != nil {
 			return copyURLsTypeInvalid, err
 		}
@@ -89,7 +89,7 @@ func prepareCopyURLsTypeA(sourceURL string, targetURL string, encKeyDB map[strin
 	// Find alias and expanded clientURL.
 	targetAlias, targetURL, _ := mustExpandAlias(targetURL)
 
-	_, sourceContent, err := url2Stat(sourceURL, false, encKeyDB)
+	_, sourceContent, err := url2Stat(sourceURL, "", false, encKeyDB)
 	if err != nil {
 		// Source does not exist or insufficient privileges.
 		return URLs{Error: err.Trace(sourceURL)}
@@ -122,7 +122,7 @@ func prepareCopyURLsTypeB(sourceURL string, targetURL string, encKeyDB map[strin
 	// Find alias and expanded clientURL.
 	targetAlias, targetURL, _ := mustExpandAlias(targetURL)
 
-	_, sourceContent, err := url2Stat(sourceURL, false, encKeyDB)
+	_, sourceContent, err := url2Stat(sourceURL, "", false, encKeyDB)
 	if err != nil {
 		// Source does not exist or insufficient privileges.
 		return URLs{Error: err.Trace(sourceURL)}

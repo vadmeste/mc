@@ -286,7 +286,7 @@ func (mj *mirrorJob) doMirrorWatch(ctx context.Context, targetPath string, tgtSS
 			// cannot create targetclient
 			return sURLs.WithError(err)
 		}
-		_, err = targetClient.Stat(false, false, tgtSSE)
+		_, err = targetClient.Stat(false, false, "", tgtSSE)
 		if err == nil {
 			if !sURLs.SourceContent.RetentionEnabled && !sURLs.SourceContent.LegalHoldEnabled {
 				return sURLs.WithError(probe.NewError(ObjectAlreadyExists{}))
@@ -851,7 +851,7 @@ func runMirror(srcURL, dstURL string, ctx *cli.Context, encKeyDB map[string][]pr
 				}
 			}
 		}
-	} else if _, err := dstClt.Stat(false, false, nil); err != nil {
+	} else if _, err := dstClt.Stat(false, false, "", nil); err != nil {
 		withLock := false
 		mode, validity, unit, err := srcClt.GetObjectLockConfig()
 		if err == nil {
