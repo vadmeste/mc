@@ -36,6 +36,10 @@ var (
 			Usage: "allow a recursive remove operation",
 		},
 		cli.BoolFlag{
+			Name:  "versions, V",
+			Usage: "allow removal of all versions",
+		},
+		cli.BoolFlag{
 			Name:  "dangerous",
 			Usage: "allow site-wide removal of objects",
 		},
@@ -101,6 +105,7 @@ func checkRbSyntax(ctx *cli.Context) {
 	// Set command flags from context.
 	isForce := ctx.Bool("force")
 	isDangerous := ctx.Bool("dangerous")
+	includeVersions := ctx.Bool("versions")
 
 	for _, url := range ctx.Args() {
 		if isNamespaceRemoval(url) {
@@ -111,10 +116,15 @@ func checkRbSyntax(ctx *cli.Context) {
 				"This operation results in **site-wide** removal of buckets. If you are really sure, retry this command with ‘--force’ and ‘--dangerous’ flags.")
 		}
 	}
+
+	if includeVersions && (!isForce || !isDangerous) {
+		fatalIf(errDummy().Trace(),
+			"This operation results in removal **versions** of your data. If you are really sure, retry this command with ‘--force’ and ‘--dangerous’ flags.")
+	}
 }
 
 // deletes a bucket and all its contents
-func deleteBucket(url string) *probe.Error {
+func deleteBucket(url string, includeVersions bool) *probe.Error {
 	ctx, cancelCopy := context.WithCancel(globalContext)
 	defer cancelCopy()
 
@@ -130,13 +140,15 @@ func deleteBucket(url string) *probe.Error {
 
 	go func() {
 		defer close(contentCh)
-		for content := range clnt.List(true, false, false, false, DirLast) {
+		for content := range clnt.List(true, false, false, includeVersions, DirNone) {
 			if content.Err != nil {
 				contentCh <- content
 				continue
 			}
 
 			urlString := content.URL.Path
+
+			// fmt.Println(content.Key, content.VersionID)
 
 			select {
 			case contentCh <- content:
@@ -192,6 +204,7 @@ func mainRemoveBucket(ctx *cli.Context) error {
 	// check 'rb' cli arguments.
 	checkRbSyntax(ctx)
 	isForce := ctx.Bool("force")
+	includeVersions := ctx.Bool("versions")
 
 	// Additional command specific theme customization.
 	console.SetColor("RemoveBucket", color.New(color.FgGreen, color.Bold))
@@ -218,16 +231,17 @@ func mainRemoveBucket(ctx *cli.Context) error {
 		}
 
 		isEmpty := true
-		for range clnt.List(true, false, false, false, DirNone) {
+		for range clnt.List(true, false, false, includeVersions, DirNone) {
 			isEmpty = false
 			break
 		}
+
 		// For all recursive operations make sure to check for 'force' flag.
 		if !isForce && !isEmpty {
 			fatalIf(errDummy().Trace(), "`"+targetURL+"` is not empty. Retry this command with ‘--force’ flag if you want to remove `"+targetURL+"` and all its contents")
 		}
 
-		e := deleteBucket(targetURL)
+		e := deleteBucket(targetURL, includeVersions)
 		fatalIf(e.Trace(targetURL), "Failed to remove `"+targetURL+"`.")
 
 		if !isNamespaceRemoval(targetURL) {

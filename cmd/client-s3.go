@@ -1037,7 +1037,7 @@ func (c *S3Client) Put(ctx context.Context, reader io.Reader, size int64, metada
 }
 
 // Remove incomplete uploads.
-func (c *S3Client) removeIncompleteObjects(bucket string, objectsCh <-chan string) <-chan minio.RemoveObjectError {
+func (c *S3Client) removeIncompleteObjects(bucket string, objectsCh <-chan minio.ObjectVersion) <-chan minio.RemoveObjectError {
 	removeObjectErrorCh := make(chan minio.RemoveObjectError)
 
 	// Goroutine reads from objectsCh and sends error to removeObjectErrorCh if any.
@@ -1045,8 +1045,8 @@ func (c *S3Client) removeIncompleteObjects(bucket string, objectsCh <-chan strin
 		defer close(removeObjectErrorCh)
 
 		for object := range objectsCh {
-			if err := c.api.RemoveIncompleteUpload(bucket, object); err != nil {
-				removeObjectErrorCh <- minio.RemoveObjectError{ObjectName: object, Err: err}
+			if err := c.api.RemoveIncompleteUpload(bucket, object.Key); err != nil {
+				removeObjectErrorCh <- minio.RemoveObjectError{ObjectName: object.Key, Err: err}
 			}
 		}
 	}()
@@ -1065,7 +1065,7 @@ func (c *S3Client) Remove(isIncomplete, isRemoveBucket, isBypass bool, contentCh
 
 	prevBucket := ""
 	// Maintain objectsCh, statusCh for each bucket
-	var objectsCh chan string
+	var objectsCh chan minio.ObjectVersion
 	var statusCh <-chan minio.RemoveObjectError
 	opts := minio.RemoveObjectsOptions{
 		GovernanceBypass: isBypass,
@@ -1081,7 +1081,7 @@ func (c *S3Client) Remove(isIncomplete, isRemoveBucket, isBypass bool, contentCh
 		}
 		for content := range contentCh {
 			// Convert content.URL.Path to objectName for objectsCh.
-			bucket, objectName := c.splitPath(content.URL.Path)
+			bucket, _ := c.splitPath(content.URL.Path)
 
 			// We don't treat path when bucket is
 			// empty, just skip it when it happens.
@@ -1091,12 +1091,12 @@ func (c *S3Client) Remove(isIncomplete, isRemoveBucket, isBypass bool, contentCh
 
 			// Init objectsCh the first time.
 			if prevBucket == "" {
-				objectsCh = make(chan string)
+				objectsCh = make(chan minio.ObjectVersion)
 				prevBucket = bucket
 				if isIncomplete {
 					statusCh = c.removeIncompleteObjects(bucket, objectsCh)
 				} else {
-					statusCh = c.api.RemoveObjectsWithOptions(bucket, objectsCh, opts)
+					statusCh = c.api.RemoveObjectsWithVersions(context.Background(), bucket, objectsCh, opts)
 				}
 			}
 
@@ -1114,23 +1114,23 @@ func (c *S3Client) Remove(isIncomplete, isRemoveBucket, isBypass bool, contentCh
 					}
 				}
 				// Re-init objectsCh for next bucket
-				objectsCh = make(chan string)
+				objectsCh = make(chan minio.ObjectVersion)
 				if isIncomplete {
 					statusCh = c.removeIncompleteObjects(bucket, objectsCh)
 				} else {
-					statusCh = c.api.RemoveObjectsWithOptions(bucket, objectsCh, opts)
+					statusCh = c.api.RemoveObjectsWithVersions(context.Background(), bucket, objectsCh, opts)
 				}
 				prevBucket = bucket
 			}
 
-			if objectName != "" {
+			if content.Key != "" {
 				// Send object name once but continuously checks for pending
 				// errors in parallel, the reason is that minio-go RemoveObjects
 				// can block if there is any pending error not received yet.
 				sent := false
 				for !sent {
 					select {
-					case objectsCh <- objectName:
+					case objectsCh <- minio.ObjectVersion{Key: content.Key, VersionID: content.VersionID}:
 						sent = true
 					case removeStatus := <-statusCh:
 						errorCh <- probe.NewError(removeStatus.Err)
