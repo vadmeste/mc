@@ -811,9 +811,9 @@ func (c *S3Client) Watch(options WatchOptions) (*WatchObject, *probe.Error) {
 }
 
 // Get - get object with metadata.
-func (c *S3Client) Get(sse encrypt.ServerSide) (io.ReadCloser, *probe.Error) {
+func (c *S3Client) Get(versionID string, sse encrypt.ServerSide) (io.ReadCloser, *probe.Error) {
 	bucket, object := c.url2BucketAndObject()
-	opts := minio.GetObjectOptions{}
+	opts := minio.GetObjectOptions{VersionID: versionID}
 	opts.ServerSideEncryption = sse
 	reader, e := c.api.GetObject(bucket, object, opts)
 	if e != nil {
@@ -839,7 +839,7 @@ func (c *S3Client) Get(sse encrypt.ServerSide) (io.ReadCloser, *probe.Error) {
 // Copy - copy object, uses server side copy API. Also uses an abstracted API
 // such that large file sizes will be copied in multipart manner on server
 // side.
-func (c *S3Client) Copy(source string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error {
+func (c *S3Client) Copy(source, versionID string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error {
 	dstBucket, dstObject := c.url2BucketAndObject()
 	if dstBucket == "" {
 		return probe.NewError(BucketNameEmpty{})
@@ -849,6 +849,9 @@ func (c *S3Client) Copy(source string, size int64, progress io.Reader, srcSSE, t
 
 	// Source object
 	src := minio.NewSourceInfo(tokens[1], tokens[2], srcSSE)
+	if versionID != "" {
+		src.SetVersionID(versionID)
+	}
 
 	destOpts := minio.DestInfoOptions{
 		Encryption: tgtSSE,
@@ -1876,6 +1879,7 @@ func (c *S3Client) objectVersionInfo2ClientContent(bucket string, entry minio.Ob
 	content.Key = entry.Key
 	content.VersionID = entry.VersionID
 	content.IsDeleteMarker = entry.IsDeleteMarker
+	content.IsLatest = entry.IsLatest
 	content.Size = entry.Size
 	content.ETag = entry.ETag
 	content.Time = entry.LastModified

@@ -62,13 +62,13 @@ type Client interface {
 	SetAccess(access string, isJSON bool) *probe.Error
 
 	// I/O operations
-	Copy(source string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error
+	Copy(source, versionID string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error
 
 	// Runs select expression on object storage on specific files.
 	Select(expression string, sse encrypt.ServerSide, opts SelectObjectOpts) (io.ReadCloser, *probe.Error)
 
 	// I/O operations with metadata.
-	Get(sse encrypt.ServerSide) (reader io.ReadCloser, err *probe.Error)
+	Get(versionID string, sse encrypt.ServerSide) (reader io.ReadCloser, err *probe.Error)
 	Put(ctx context.Context, reader io.Reader, size int64, metadata map[string]string, progress io.Reader, sse encrypt.ServerSide, md5, disableMultipart bool) (n int64, err *probe.Error)
 
 	// Object Locking related API
@@ -107,6 +107,7 @@ type ClientContent struct {
 	Size              int64
 	VersionID         string
 	IsDeleteMarker    bool
+	IsLatest          bool
 	Type              os.FileMode
 	StorageClass      string
 	Metadata          map[string]string

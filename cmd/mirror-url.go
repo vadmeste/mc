@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/minio/cli"
 	"github.com/minio/minio/pkg/wildcard"
@@ -84,6 +85,22 @@ func checkMirrorSyntax(ctx *cli.Context, encKeyDB map[string][]prefixSSEPair) {
 		}
 	}
 
+	timeRef := ctx.String("time-reference")
+	if timeRef != "" {
+		if !strings.HasPrefix(timeRef, "after ") && !strings.HasPrefix(timeRef, "before ") {
+			fatalIf(errInvalidArgument(), "Missing 'after' or 'before' keyword in time reference flag.")
+		}
+
+		timeRef = strings.TrimPrefix(timeRef, "after")
+		timeRef = strings.TrimPrefix(timeRef, "before")
+		timeRef = strings.TrimSpace(timeRef)
+
+		_, err := time.Parse(time.RFC3339, timeRef)
+		if err != nil {
+			fatalIf(errInvalidArgument(), fmt.Sprintf("Time reference `%s` cannot be parsed.", timeRef))
+		}
+	}
+
 }
 
 func matchExcludeOptions(excludeOptions []string, srcSuffix string) bool {
@@ -95,7 +112,7 @@ func matchExcludeOptions(excludeOptions []string, srcSuffix string) bool {
 	return false
 }
 
-func deltaSourceTarget(sourceURL, targetURL string, isFake, isOverwrite, isRemove, isMetadata bool, excludeOptions []string, URLsCh chan<- URLs, encKeyDB map[string][]prefixSSEPair) {
+func deltaSourceTarget(sourceURL, targetURL string, isFake, isOverwrite, isRemove bool, after bool, timeRef time.Time, isMetadata bool, excludeOptions []string, URLsCh chan<- URLs, encKeyDB map[string][]prefixSSEPair) {
 	// source and targets are always directories
 	sourceSeparator := string(newClientURL(sourceURL).Separator)
 	if !strings.HasSuffix(sourceURL, sourceSeparator) {
@@ -125,7 +142,7 @@ func deltaSourceTarget(sourceURL, targetURL string, isFake, isOverwrite, isRemov
 	}
 
 	// List both source and target, compare and return values through channel.
-	for diffMsg := range objectDifference(sourceClnt, targetClnt, sourceURL, targetURL, isMetadata) {
+	for diffMsg := range objectDifference(sourceClnt, targetClnt, sourceURL, targetURL, after, timeRef, isMetadata) {
 		if diffMsg.Error != nil {
 			// Send all errors through the channel
 			URLsCh <- URLs{Error: diffMsg.Error}
@@ -196,8 +213,8 @@ func deltaSourceTarget(sourceURL, targetURL string, isFake, isOverwrite, isRemov
 }
 
 // Prepares urls that need to be copied or removed based on requested options.
-func prepareMirrorURLs(sourceURL string, targetURL string, isFake, isOverwrite, isRemove, isMetadata bool, excludeOptions []string, encKeyDB map[string][]prefixSSEPair) <-chan URLs {
+func prepareMirrorURLs(sourceURL string, targetURL string, isFake, isOverwrite, isRemove bool, after bool, timeRef time.Time, isMetadata bool, excludeOptions []string, encKeyDB map[string][]prefixSSEPair) <-chan URLs {
 	URLsCh := make(chan URLs)
-	go deltaSourceTarget(sourceURL, targetURL, isFake, isOverwrite, isRemove, isMetadata, excludeOptions, URLsCh, encKeyDB)
+	go deltaSourceTarget(sourceURL, targetURL, isFake, isOverwrite, isRemove, after, timeRef, isMetadata, excludeOptions, URLsCh, encKeyDB)
 	return URLsCh
 }

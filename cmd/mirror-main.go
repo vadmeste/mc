@@ -47,6 +47,10 @@ var (
 			Name:  "overwrite",
 			Usage: "overwrite object(s) on target",
 		},
+		cli.StringFlag{
+			Name:  "time-reference, t",
+			Usage: "select object versions since time-reference",
+		},
 		cli.BoolFlag{
 			Name:  "fake",
 			Usage: "perform a fake mirror operation",
@@ -212,8 +216,12 @@ type mirrorJob struct {
 	isWatch, isPreserve           bool
 	md5, disableMultipart         bool
 	olderThan, newerThan          string
-	storageClass                  string
-	userMetadata                  map[string]string
+
+	timeRef      time.Time
+	afterTimeRef bool
+
+	storageClass string
+	userMetadata map[string]string
 
 	excludeOptions []string
 	encKeyDB       map[string][]prefixSSEPair
@@ -547,7 +555,7 @@ func (mj *mirrorJob) startMirror(ctx context.Context, cancelMirror context.Cance
 	defer mj.m.Unlock()
 
 	isMetadata := len(mj.userMetadata) > 0 || mj.isPreserve
-	URLsCh := prepareMirrorURLs(mj.sourceURL, mj.targetURL, mj.isFake, mj.isOverwrite, mj.isRemove, isMetadata, mj.excludeOptions, mj.encKeyDB)
+	URLsCh := prepareMirrorURLs(mj.sourceURL, mj.targetURL, mj.isFake, mj.isOverwrite, mj.isRemove, mj.afterTimeRef, mj.timeRef, isMetadata, mj.excludeOptions, mj.encKeyDB)
 
 	for {
 		select {
@@ -643,7 +651,7 @@ func (mj *mirrorJob) mirror(ctx context.Context, cancelMirror context.CancelFunc
 	return mj.monitorMirrorStatus()
 }
 
-func newMirrorJob(srcURL, dstURL string, isFake, isRemove, isOverwrite, isWatch, isPreserve, multiMasterEnable bool, excludeOptions []string, olderThan, newerThan string, storageClass string, userMetadata map[string]string, encKeyDB map[string][]prefixSSEPair, md5, disableMultipart bool) *mirrorJob {
+func newMirrorJob(srcURL, dstURL string, isFake, isRemove, isOverwrite, isWatch, isPreserve, multiMasterEnable bool, excludeOptions []string, olderThan, newerThan string, afterTimeRef bool, timeRef time.Time, storageClass string, userMetadata map[string]string, encKeyDB map[string][]prefixSSEPair, md5, disableMultipart bool) *mirrorJob {
 	if multiMasterEnable {
 		isPreserve = true
 	}
@@ -663,6 +671,8 @@ func newMirrorJob(srcURL, dstURL string, isFake, isRemove, isOverwrite, isWatch,
 		excludeOptions:    excludeOptions,
 		olderThan:         olderThan,
 		newerThan:         newerThan,
+		afterTimeRef:      afterTimeRef,
+		timeRef:           timeRef,
 		storageClass:      storageClass,
 		userMetadata:      userMetadata,
 		encKeyDB:          encKeyDB,
@@ -774,6 +784,20 @@ func runMirror(srcURL, dstURL string, ctx *cli.Context, encKeyDB map[string][]pr
 		fatalIf(err, "Unable to initialize `"+dstURL+"`.")
 	}
 
+	timeRef := time.Time{}
+	afterTimeRef := false
+
+	timeRefStr := ctx.String("time-reference")
+	if timeRefStr != "" {
+		if strings.HasPrefix(timeRefStr, "after ") {
+			afterTimeRef = true
+		}
+		timeRefStr = strings.TrimPrefix(timeRefStr, "after ")
+		timeRefStr = strings.TrimPrefix(timeRefStr, "before ")
+		timeRefStr = strings.TrimSpace(timeRefStr)
+		timeRef, _ = time.Parse(time.RFC3339, timeRefStr)
+	}
+
 	// Create a new mirror job and execute it
 	mj := newMirrorJob(srcURL, dstURL,
 		ctx.Bool("fake"),
@@ -785,6 +809,8 @@ func runMirror(srcURL, dstURL string, ctx *cli.Context, encKeyDB map[string][]pr
 		ctx.StringSlice("exclude"),
 		ctx.String("older-than"),
 		ctx.String("newer-than"),
+		afterTimeRef,
+		timeRef,
 		ctx.String("storage-class"),
 		userMetaMap,
 		encKeyDB,

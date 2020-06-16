@@ -394,7 +394,7 @@ func (f *fsClient) ShareUpload(startsWith bool, expires time.Duration, contentTy
 }
 
 // Copy - copy data from source to destination
-func (f *fsClient) Copy(source string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error {
+func (f *fsClient) Copy(source, versionID string, size int64, progress io.Reader, srcSSE, tgtSSE encrypt.ServerSide, metadata map[string]string, disableMultipart bool) *probe.Error {
 	rc, e := os.Open(source)
 	if e != nil {
 		err := f.toClientError(e, source)
@@ -410,7 +410,7 @@ func (f *fsClient) Copy(source string, size int64, progress io.Reader, srcSSE, t
 }
 
 // Get returns reader and any additional metadata.
-func (f *fsClient) Get(sse encrypt.ServerSide) (io.ReadCloser, *probe.Error) {
+func (f *fsClient) Get(versionID string, sse encrypt.ServerSide) (io.ReadCloser, *probe.Error) {
 	fileData, e := os.Open(f.PathURL.Path)
 	if e != nil {
 		err := f.toClientError(e, f.PathURL.Path)

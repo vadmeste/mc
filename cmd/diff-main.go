@@ -19,6 +19,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/minio/cli"
@@ -176,7 +177,7 @@ func doDiffMain(firstURL, secondURL string) error {
 	}
 
 	// Diff first and second urls.
-	for diffMsg := range objectDifference(firstClient, secondClient, firstURL, secondURL, false) {
+	for diffMsg := range objectDifference(firstClient, secondClient, firstURL, secondURL, false, time.Time{}, false) {
 		if diffMsg.Error != nil {
 			errorIf(diffMsg.Error, "Unable to calculate objects difference.")
 			// Ignore error and proceed to next object.

@@ -127,19 +127,73 @@ func metadataEqual(m1, m2 map[string]string) bool {
 	return true
 }
 
-func objectDifference(sourceClnt, targetClnt Client, sourceURL, targetURL string, isMetadata bool) (diffCh chan diffMessage) {
-	return difference(sourceClnt, targetClnt, sourceURL, targetURL, isMetadata, true, false, DirNone)
+func objectDifference(sourceClnt, targetClnt Client, sourceURL, targetURL string, after bool, timeRef time.Time, isMetadata bool) (diffCh chan diffMessage) {
+	return difference(sourceClnt, targetClnt, sourceURL, targetURL, after, timeRef, isMetadata, true, false, DirNone)
 }
 
 func dirDifference(sourceClnt, targetClnt Client, sourceURL, targetURL string) (diffCh chan diffMessage) {
-	return difference(sourceClnt, targetClnt, sourceURL, targetURL, false, false, true, DirFirst)
+	return difference(sourceClnt, targetClnt, sourceURL, targetURL, false, time.Time{}, false, false, true, DirFirst)
 }
 
-func differenceInternal(sourceClnt, targetClnt Client, sourceURL, targetURL string, isMetadata bool, isRecursive, returnSimilar bool, dirOpt DirOpt, diffCh chan<- diffMessage) *probe.Error {
+func listSourceWithTimeRef(sourceClnt Client, after bool, timeRef time.Time, isRecursive, isMetadata bool, dirOpt DirOpt) <-chan *ClientContent {
+	srcCh := make(chan *ClientContent)
+	go func() {
+		defer close(srcCh)
+		var candidateVersions []*ClientContent
+		sendVersion := func(after bool) {
+			if after {
+				for _, v := range candidateVersions {
+					if v.IsLatest {
+						srcCh <- v
+						break
+					}
+				}
+			} else {
+				var earliestVersionIdx int
+				var earliestVersionTime time.Time
+				for i, v := range candidateVersions {
+					if earliestVersionTime.IsZero() || v.Time.Before(earliestVersionTime) {
+						earliestVersionTime = v.Time
+						earliestVersionIdx = i
+					}
+				}
+				srcCh <- candidateVersions[earliestVersionIdx]
+			}
+		}
+
+		for content := range sourceClnt.List(isRecursive, false, isMetadata, true, dirOpt) {
+			if !timeRef.IsZero() {
+				if after && content.Time.Before(timeRef) {
+					continue
+				}
+				if !after && content.Time.After(timeRef) {
+					continue
+				}
+			}
+			if len(candidateVersions) > 0 && candidateVersions[0].Key != content.Key {
+				sendVersion(after)
+				candidateVersions = nil
+			}
+			candidateVersions = append(candidateVersions, content)
+		}
+
+		sendVersion(after)
+	}()
+	return srcCh
+}
+
+func differenceInternal(sourceClnt, targetClnt Client, sourceURL, targetURL string, after bool, timeRef time.Time, isMetadata bool, isRecursive, returnSimilar bool, dirOpt DirOpt, diffCh chan<- diffMessage) *probe.Error {
+
+	var srcCh, tgtCh <-chan *ClientContent
+
 	// Set default values for listing.
-	isIncomplete := false // we will not compare any incomplete objects.
-	srcCh := sourceClnt.List(isRecursive, isIncomplete, isMetadata, false, dirOpt)
-	tgtCh := targetClnt.List(isRecursive, isIncomplete, isMetadata, false, dirOpt)
+	if timeRef.IsZero() {
+		srcCh = sourceClnt.List(isRecursive, false, isMetadata, false, dirOpt)
+	} else {
+		srcCh = listSourceWithTimeRef(sourceClnt, after, timeRef, isRecursive, isMetadata, dirOpt)
+	}
+
+	tgtCh = targetClnt.List(isRecursive, false, isMetadata, false, dirOpt)
 
 	srcCtnt, srcOk := <-srcCh
 	tgtCtnt, tgtOk := <-tgtCh
@@ -296,7 +350,7 @@ func differenceInternal(sourceClnt, targetClnt Client, sourceURL, targetURL stri
 
 // objectDifference function finds the difference between all objects
 // recursively in sorted order from source and target.
-func difference(sourceClnt, targetClnt Client, sourceURL, targetURL string, isMetadata bool, isRecursive, returnSimilar bool, dirOpt DirOpt) (diffCh chan diffMessage) {
+func difference(sourceClnt, targetClnt Client, sourceURL, targetURL string, after bool, timeRef time.Time, isMetadata bool, isRecursive, returnSimilar bool, dirOpt DirOpt) (diffCh chan diffMessage) {
 	diffCh = make(chan diffMessage, 10000)
 
 	go func() {
@@ -306,7 +360,7 @@ func difference(sourceClnt, targetClnt Client, sourceURL, targetURL string, isMe
 		defer close(doneCh)
 
 		for range newRetryTimerContinous(time.Second, time.Second*30, minio.MaxJitter, doneCh) {
-			err := differenceInternal(sourceClnt, targetClnt, sourceURL, targetURL,
+			err := differenceInternal(sourceClnt, targetClnt, sourceURL, targetURL, after, timeRef,
 				isMetadata, isRecursive, returnSimilar, dirOpt, diffCh)
 			if err != nil {
 				// handle this specifically for filesystem related errors.
