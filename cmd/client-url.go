@@ -21,7 +21,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/minio/pkg/mimedb"
@@ -180,6 +182,57 @@ func urlJoinPath(url1, url2 string) string {
 	u1 := newClientURL(url1)
 	u2 := newClientURL(url2)
 	return joinURLs(u1, u2).String()
+}
+
+// url2Stat returns stat info for URL.
+func url2StatWithTimeRef(urlStr string, afterTimeRef bool, timeRef time.Time) (content *ClientContent, err *probe.Error) {
+	client, err := newClient(urlStr)
+	if err != nil {
+		return nil, err.Trace(urlStr)
+	}
+
+	var candidateVersions []*ClientContent
+
+	for entry := range client.List(false, false, false, !timeRef.IsZero(), DirNone) {
+		if !strings.HasSuffix(urlStr, entry.Key) {
+			continue
+		}
+		if entry.Type.IsDir() {
+			return entry, nil
+		}
+		if !afterTimeRef && entry.Time.After(timeRef) {
+			continue
+		}
+		if afterTimeRef && entry.Time.Before(timeRef) {
+			continue
+		}
+		candidateVersions = append(candidateVersions, entry)
+	}
+
+	if len(candidateVersions) == 0 {
+		content, err = client.Stat(false, false, "", nil)
+		if err == nil {
+			return content, nil
+		}
+
+		if content.Type.IsDir() {
+			return content, nil
+		}
+
+		return nil, probe.NewError(ObjectMissing{})
+	}
+
+	sort.Slice(candidateVersions, func(i, j int) bool {
+		return candidateVersions[i].Time.Before(candidateVersions[j].Time)
+	})
+
+	if afterTimeRef {
+		content = candidateVersions[len(candidateVersions)-1]
+	} else {
+		content = candidateVersions[0]
+	}
+
+	return content, nil
 }
 
 // url2Stat returns stat info for URL.

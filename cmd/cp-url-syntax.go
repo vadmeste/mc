@@ -19,6 +19,8 @@ package cmd
 import (
 	"fmt"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/minio/cli"
 	"github.com/minio/minio/pkg/console"
@@ -71,9 +73,28 @@ func checkCopySyntax(ctx *cli.Context, encKeyDB map[string][]prefixSSEPair, isMv
 		operation = "move"
 	}
 
+	var (
+		afterTimeRef bool
+		timeRef      time.Time
+		timeRefStr   = ctx.String("time-reference")
+		e            error
+	)
+
+	if timeRefStr != "" {
+		afterTimeRef = strings.HasPrefix("after ", timeRefStr)
+		timeRefStr = strings.TrimPrefix(timeRefStr, "after ")
+		timeRefStr = strings.TrimPrefix(timeRefStr, "before ")
+		timeRefStr = strings.TrimSpace(timeRefStr)
+		timeRef, e = time.Parse(time.RFC3339, timeRefStr)
+		if e != nil {
+			fatalIf(errInvalidArgument().Trace(), "Unable to parse the time reference flag.")
+		}
+	}
+
 	// Guess CopyURLsType based on source and target URLs.
-	copyURLsType, err := guessCopyURLType(srcURLs, tgtURL, isRecursive, encKeyDB)
+	copyURLsType, err := guessCopyURLType(srcURLs, tgtURL, afterTimeRef, timeRef, isRecursive, encKeyDB)
 	if err != nil {
+		fmt.Println(err)
 		fatalIf(errInvalidArgument().Trace(), "Unable to guess the type of "+operation+" operation.")
 	}
 

@@ -1,5 +1,5 @@
 /*
- * MinIO Client (C) 2014-2019 MinIO, Inc.
+ * MinIO Client (C) 2014-2020 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,10 @@ var (
 		cli.StringFlag{
 			Name:  "newer-than",
 			Usage: "copy objects newer than L days, M hours and N minutes",
+		},
+		cli.StringFlag{
+			Name:  "time-reference, t",
+			Usage: "Source view at the specified time",
 		},
 		cli.StringFlag{
 			Name:  "storage-class, sc",
@@ -276,6 +280,7 @@ func doPrepareCopyURLs(session *sessionV8, cancelCopy context.CancelFunc) (total
 
 	olderThan := session.Header.CommandStringFlags["older-than"]
 	newerThan := session.Header.CommandStringFlags["newer-than"]
+	timeRef := session.Header.CommandStringFlags["time-reference"]
 	encryptKeys := session.Header.CommandStringFlags["encrypt-key"]
 	encrypt := session.Header.CommandStringFlags["encrypt"]
 	encKeyDB, err := parseAndValidateEncryptionKeys(encryptKeys, encrypt)
@@ -289,7 +294,7 @@ func doPrepareCopyURLs(session *sessionV8, cancelCopy context.CancelFunc) (total
 		scanBar = scanBarFactory()
 	}
 
-	URLsCh := prepareCopyURLs(sourceURLs, targetURL, isRecursive, encKeyDB, olderThan, newerThan)
+	URLsCh := prepareCopyURLs(sourceURLs, targetURL, isRecursive, encKeyDB, olderThan, newerThan, timeRef)
 	done := false
 	for !done {
 		select {
@@ -400,11 +405,12 @@ func doCopySession(cli *cli.Context, session *sessionV8, encKeyDB map[string][]p
 		isRecursive := cli.Bool("recursive")
 		olderThan := cli.String("older-than")
 		newerThan := cli.String("newer-than")
+		timeRef := cli.String("time-reference")
 
 		go func() {
 			totalBytes := int64(0)
 			for cpURLs := range prepareCopyURLs(sourceURLs, targetURL, isRecursive,
-				encKeyDB, olderThan, newerThan) {
+				encKeyDB, olderThan, newerThan, timeRef) {
 				if cpURLs.Error != nil {
 					// Print in new line and adjust to top so that we
 					// don't print over the ongoing scan bar
@@ -640,6 +646,7 @@ func mainCopy(ctx *cli.Context) error {
 	olderThan := ctx.String("older-than")
 	newerThan := ctx.String("newer-than")
 	storageClass := ctx.String("storage-class")
+	timeReference := ctx.String("time-reference")
 	retentionMode := ctx.String(rmFlag)
 	retentionDuration := ctx.String(rdFlag)
 	legalHold := ctx.String(lhFlag)
@@ -667,6 +674,7 @@ func mainCopy(ctx *cli.Context) error {
 			session.Header.CommandBoolFlags["recursive"] = recursive
 			session.Header.CommandStringFlags["older-than"] = olderThan
 			session.Header.CommandStringFlags["newer-than"] = newerThan
+			session.Header.CommandStringFlags["time-reference"] = timeReference
 			session.Header.CommandStringFlags["storage-class"] = storageClass
 			session.Header.CommandStringFlags[rmFlag] = retentionMode
 			session.Header.CommandStringFlags[rdFlag] = retentionDuration

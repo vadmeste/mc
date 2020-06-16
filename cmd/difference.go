@@ -149,26 +149,26 @@ func listSourceWithTimeRef(sourceClnt Client, after bool, timeRef time.Time, isR
 					}
 				}
 			} else {
-				var earliestVersionIdx int
-				var earliestVersionTime time.Time
-				for i, v := range candidateVersions {
-					if earliestVersionTime.IsZero() || v.Time.Before(earliestVersionTime) {
-						earliestVersionTime = v.Time
-						earliestVersionIdx = i
+				if len(candidateVersions) > 0 {
+					var earliestVersionIdx int
+					var earliestVersionTime time.Time
+					for i, v := range candidateVersions {
+						if earliestVersionTime.IsZero() || v.Time.Before(earliestVersionTime) {
+							earliestVersionTime = v.Time
+							earliestVersionIdx = i
+						}
 					}
+					srcCh <- candidateVersions[earliestVersionIdx]
 				}
-				srcCh <- candidateVersions[earliestVersionIdx]
 			}
 		}
 
 		for content := range sourceClnt.List(isRecursive, false, isMetadata, true, dirOpt) {
-			if !timeRef.IsZero() {
-				if after && content.Time.Before(timeRef) {
-					continue
-				}
-				if !after && content.Time.After(timeRef) {
-					continue
-				}
+			if after && content.Time.Before(timeRef) {
+				continue
+			}
+			if !after && content.Time.After(timeRef) {
+				continue
 			}
 			if len(candidateVersions) > 0 && candidateVersions[0].Key != content.Key {
 				sendVersion(after)
