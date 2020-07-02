@@ -35,3 +35,7 @@ require (
 	gopkg.in/ini.v1 v1.55.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 )
+
+// Requires vadmestre:add-versioning-support-backup
+replace github.com/minio/minio-go/v6 => ../minio-go
+
