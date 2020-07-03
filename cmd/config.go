@@ -308,19 +308,22 @@ func expandAlias(aliasedURL string) (alias string, urlStr string, hostCfg *hostC
 		return alias, urlJoinPath(hostCfg.URL, path), hostCfg, nil
 	}
 
-	if strings.HasPrefix(alias, snapshotPrefix) {
-		snapshots, err := listSnapshots()
-		want := strings.TrimPrefix(alias, snapshotPrefix)
-		if !strings.HasSuffix(want, snapshotSuffix) {
-			want = want + snapshotSuffix
-		}
-		if err == nil {
-			for _, s := range snapshots {
-				if s.Name() == want {
-					return alias, aliasedURL, nil, nil
+	snapshots, err := listSnapshots()
+	want := strings.TrimPrefix(alias, snapshotPrefix)
+	if !strings.HasSuffix(want, snapshotSuffix) {
+		want = want + snapshotSuffix
+	}
+	if err == nil {
+		for _, s := range snapshots {
+			if s.Name() == want {
+				if !strings.HasPrefix(alias, snapshotPrefix) {
+					alias = snapshotPrefix + alias
 				}
+				return alias, aliasedURL, nil, nil
 			}
 		}
+	}
+	if strings.HasPrefix(alias, snapshotPrefix) {
 		return alias, aliasedURL, nil, nil
 	}
 
