@@ -308,13 +308,20 @@ func expandAlias(aliasedURL string) (alias string, urlStr string, hostCfg *hostC
 		return alias, urlJoinPath(hostCfg.URL, path), hostCfg, nil
 	}
 
-	snapshots, err := listSnapshots()
-	if err == nil {
-		for _, s := range snapshots {
-			if s.Name() == alias {
-				return alias, aliasedURL, nil, nil
+	if strings.HasPrefix(alias, snapshotPrefix) {
+		snapshots, err := listSnapshots()
+		want := strings.TrimPrefix(alias, snapshotPrefix)
+		if !strings.HasSuffix(want, snapshotSuffix) {
+			want = want + snapshotSuffix
+		}
+		if err == nil {
+			for _, s := range snapshots {
+				if s.Name() == want {
+					return alias, aliasedURL, nil, nil
+				}
 			}
 		}
+		return alias, aliasedURL, nil, nil
 	}
 
 	return "", aliasedURL, nil, nil // No matching entry found. Return original URL as is.
