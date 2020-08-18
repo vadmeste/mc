@@ -27,6 +27,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/net v0.0.0-20200904194848-62affa334b73
 	golang.org/x/text v0.3.3
+	golang.org/x/tools v0.0.0-20201021171030-d105bfabbdbe // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
 	gopkg.in/h2non/filetype.v1 v1.0.5
