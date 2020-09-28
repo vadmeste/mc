@@ -19,6 +19,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,9 +34,8 @@ import (
 	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/minio/pkg/console"
 	"github.com/minio/minio/pkg/words"
+	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/profile"
-
-	completeinstall "github.com/posener/complete/cmd/install"
 )
 
 var (
@@ -236,23 +236,62 @@ func initMC() {
 
 }
 
+const bashAutoCompleteTemplate = `
+
+_cli_bash_autocomplete() {
+   local cur opts base
+   COMPREPLY=()
+   cur="${COMP_WORDS[COMP_CWORD]}"
+   opts=$( ${COMP_WORDS[@]:0:$COMP_CWORD} --generate-bash-completion )
+   COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+   return 0
+}
+
+complete -F _cli_bash_autocomplete ${PROG}
+`
+
+const shellCompletionFName = ".shell_completion"
+
 func installAutoCompletion() {
 	if runtime.GOOS == "windows" {
 		console.Infoln("autocompletion feature is not available for this operating system")
 		return
 	}
 
-	if completeinstall.IsInstalled(filepath.Base(os.Args[0])) || completeinstall.IsInstalled("mc") {
-		console.Infoln("autocompletion is already enabled in your '$SHELLRC'")
+	if os.Getenv("SHELL") != "/bin/bash" {
 		return
 	}
 
-	err := completeinstall.Install(filepath.Base(os.Args[0]))
+	mcDir, err := getMcConfigDir()
 	if err != nil {
-		fatalIf(probe.NewError(err), "Unable to install auto-completion.")
-	} else {
-		console.Infoln("enabled autocompletion in '$SHELLRC'. Please restart your shell.")
 	}
+
+	homeDir, e := homedir.Dir()
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to install auto-completion.")
+	}
+
+	completionScriptFPath := filepath.Join(mcDir, shellCompletionFName)
+	binaryName := filepath.Base(os.Args[0])
+
+	completionScript := strings.Replace(bashAutoCompleteTemplate, "${PROG}", binaryName, -1)
+	e = ioutil.WriteFile(completionScriptFPath, []byte(completionScript), 0600)
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to install auto-completion.")
+	}
+
+	f, e := os.OpenFile(filepath.Join(homeDir, ".bashrc"), os.O_APPEND|os.O_WRONLY, 0600)
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to install auto-completion.")
+	}
+
+	defer f.Close()
+
+	fmt.Fprintf(f, "\n")
+	fmt.Fprintf(f, "source %s\n", completionScriptFPath)
+	fmt.Fprintf(f, "\n")
+
+	console.Infoln("enabled autocompletion in '$SHELLRC'. Please restart your shell.")
 }
 
 func registerBefore(ctx *cli.Context) error {
