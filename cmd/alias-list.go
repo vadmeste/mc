@@ -32,6 +32,7 @@ var aliasListCmd = cli.Command{
 	Action: func(ctx *cli.Context) error {
 		return mainAliasList(ctx, false)
 	},
+	BashComplete:    completeFn(aliasCompleteV2{}),
 	Before:          setGlobalsFromContext,
 	Flags:           globalFlags,
 	HideHelpCommand: true,

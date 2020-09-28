@@ -29,6 +29,9 @@ var aliasRemoveCmd = cli.Command{
 	Action: func(ctx *cli.Context) error {
 		return mainAliasRemove(ctx, false)
 	},
+	BashComplete: func(ctx *cli.Context) {
+		completeFn(aliasCompleteV2{})
+	},
 	Before:          setGlobalsFromContext,
 	Flags:           globalFlags,
 	HideHelpCommand: true,
