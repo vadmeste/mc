@@ -44,7 +44,7 @@ func TestCheckBashCompletion(t *testing.T) {
 
 	for _, app := range appCmds {
 		if e := checkBashCompletion(app); e != nil {
-			t.Errorf("%s, %v", app.Name, e)
+			t.Fatalf("%s, %v", app.Name, e)
 		}
 	}
 }
