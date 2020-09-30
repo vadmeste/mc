@@ -238,16 +238,25 @@ func initMC() {
 
 const bashAutoCompleteTemplate = `
 
+#! /bin/bash
+
 _cli_bash_autocomplete() {
-   local cur opts base
-   COMPREPLY=()
-   cur="${COMP_WORDS[COMP_CWORD]}"
-   opts=$( ${COMP_WORDS[@]:0:$COMP_CWORD} --generate-bash-completion )
-   COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
-   return 0
+  if [[ "${COMP_WORDS[0]}" != "source" ]]; then
+      local cur opts base
+      COMPREPLY=()
+      cur="${COMP_WORDS[COMP_CWORD]}"
+      if [[ "$cur" == "-"* ]]; then
+        opts=$( ${COMP_WORDS[@]:0:$COMP_CWORD} ${cur} --generate-bash-completion )
+      else
+        opts=$( ${COMP_WORDS[@]:0:$COMP_CWORD} --generate-bash-completion )
+      fi
+      COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+      return 0
+  fi
 }
 
-complete -F _cli_bash_autocomplete ${PROG}
+complete -o bashdefault -o default -o nospace -F _cli_bash_autocomplete ${MC_PROG}
+
 `
 
 const shellCompletionFName = ".shell_completion"
@@ -274,7 +283,7 @@ func installAutoCompletion() {
 	completionScriptFPath := filepath.Join(mcDir, shellCompletionFName)
 	binaryName := filepath.Base(os.Args[0])
 
-	completionScript := strings.Replace(bashAutoCompleteTemplate, "${PROG}", binaryName, -1)
+	completionScript := strings.Replace(bashAutoCompleteTemplate, "${MC_PROG}", binaryName, -1)
 	e = ioutil.WriteFile(completionScriptFPath, []byte(completionScript), 0600)
 	if e != nil {
 		fatalIf(probe.NewError(e), "Unable to install auto-completion.")
