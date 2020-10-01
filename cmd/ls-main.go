@@ -56,7 +56,7 @@ var lsCmd = cli.Command{
 	Name:         "ls",
 	Usage:        "list buckets and objects",
 	Action:       mainList,
-	BashComplete: completeFn(s3CompleteV2{deepLevel: 2}, fsCompleteV2{}),
+	BashComplete: completeFn(fsCompleteV2{}), // s3CompleteV2{deepLevel: 2}, fsCompleteV2{}),
 	Before:       setGlobalsFromContext,
 	Flags:        append(lsFlags, globalFlags...),
 	CustomHelpTemplate: `NAME:

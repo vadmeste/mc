@@ -25,15 +25,20 @@ import (
 	"strings"
 
 	"github.com/minio/cli"
-	"github.com/posener/complete"
 )
 
 // fsComplete knows how to complete file/dir names by the given path
 type fsCompleteV2 struct{}
 
 func (fs fsCompleteV2) predictPath(arg string) []string {
+
 	dir := filepath.Dir(arg)
-	files, err := ioutil.ReadDir(dir)
+	readDir := dir
+	if readDir == "" {
+		readDir = "."
+	}
+
+	files, err := ioutil.ReadDir(readDir)
 	if err != nil {
 		return nil
 	}
@@ -43,7 +48,7 @@ func (fs fsCompleteV2) predictPath(arg string) []string {
 	var predictions []string
 	for _, file := range files {
 		if strings.HasPrefix(file.Name(), fn) {
-			predictions = append(predictions, file.Name())
+			predictions = append(predictions, filepath.Join(dir, file.Name()))
 		}
 	}
 	return predictions
@@ -71,7 +76,10 @@ func (fs fsCompleteV2) predictPathWithTilde(arg string) []string {
 }
 
 func (fs fsCompleteV2) Predict(ctx *cli.Context) []string {
-	arg := ctx.Args().First()
+	arg := ""
+	if l := len(ctx.Args()); l > 0 {
+		arg = ctx.Args().Get(l - 1)
+	}
 	if strings.HasPrefix(arg, "~/") {
 		return fs.predictPathWithTilde(arg)
 	}
@@ -137,13 +145,10 @@ func completeS3PathV2(s3Path string) (prediction []string) {
 	return
 }
 
+/*
 type adminConfigCompleteV2 struct{}
 
-func (adm adminConfigCompleteV2) Predict(a complete.Args) (prediction []string) {
-	defer func() {
-		sort.Strings(prediction)
-	}()
-
+func (adm adminConfigCompleteV2) Predict(ctx *cli.Context) (prediction []string) {
 	loadMcConfig = loadMcConfigFactory()
 	conf, err := loadMcConfig()
 	if err != nil {
@@ -173,6 +178,7 @@ func (adm adminConfigCompleteV2) Predict(a complete.Args) (prediction []string) 
 	}
 	return
 }
+*/
 
 // s3Complete knows how to complete an mc s3 path
 type s3CompleteV2 struct {
@@ -186,7 +192,10 @@ func (s3 s3CompleteV2) Predict(ctx *cli.Context) (prediction []string) {
 		return nil
 	}
 
-	arg := ctx.Args().First()
+	arg := ""
+	if l := len(ctx.Args()); l > 0 {
+		arg = ctx.Args().Get(l - 1)
+	}
 
 	if strings.IndexByte(arg, '/') == -1 {
 		// Only predict alias since '/' is not found
@@ -224,13 +233,40 @@ func (al aliasCompleteV2) Predict(ctx *cli.Context) []string {
 
 	var predictions []string
 
-	arg := ctx.Args().Get(0)
+	arg := ""
+	if l := len(ctx.Args()); l > 0 {
+		arg = ctx.Args().Get(l - 1)
+	}
+
 	for alias := range conf.Aliases {
 		if strings.HasPrefix(alias, arg) {
 			predictions = append(predictions, alias+"/")
 		}
 	}
 
+	return predictions
+}
+
+type flagsPredictor struct {
+}
+
+func (fp flagsPredictor) Predict(ctx *cli.Context) []string {
+	var predictions []string
+	for _, cmdFlags := range ctx.Command.Flags {
+		name := strings.TrimSpace(cmdFlags.GetName())
+		for _, flag := range strings.Split(name, ",") {
+			flag = strings.TrimSpace(flag)
+			if flag == "" {
+				continue
+			}
+			if len(flag) == 1 {
+				flag = "-" + flag
+			} else {
+				flag = "--" + flag
+			}
+			predictions = append(predictions, flag)
+		}
+	}
 	return predictions
 }
 
@@ -241,6 +277,7 @@ type predictors interface {
 func completeFn(predictors ...predictors) func(*cli.Context) {
 	return func(ctx *cli.Context) {
 		var predictions []string
+		// predictions = append(predictions, flagsPredictor{}.Predict(ctx)...)
 		for _, p := range predictors {
 			if p != nil {
 				predictions = append(predictions, p.Predict(ctx)...)
