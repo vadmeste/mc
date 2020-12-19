@@ -122,7 +122,7 @@ func mainRetentionClear(cliCtx *cli.Context) error {
 	console.SetColor("RetentionFailure", color.New(color.FgYellow))
 
 	if len(cliCtx.Args()) != 1 {
-		cli.ShowCommandHelpAndExit(cliCtx, "clear", 1)
+		showCommandHelpAndExit(cliCtx, "clear", 1)
 	}
 
 	target, versionID, rewind, withVersions, recursive, bucketMode := parseClearRetentionArgs(cliCtx)

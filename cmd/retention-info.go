@@ -366,7 +366,7 @@ func mainRetentionInfo(cliCtx *cli.Context) error {
 	console.SetColor("RetentionFailure", color.New(color.FgYellow))
 
 	if len(cliCtx.Args()) != 1 {
-		cli.ShowCommandHelpAndExit(cliCtx, "info", 1)
+		showCommandHelpAndExit(cliCtx, "info", 1)
 	}
 
 	target, versionID, recursive, rewind, withVersions, bucketMode := parseInfoRetentionArgs(cliCtx)

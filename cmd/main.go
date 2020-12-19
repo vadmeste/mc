@@ -161,7 +161,7 @@ func onUsageError(ctx *cli.Context, err error, subcommand bool) error {
 func commandNotFound(ctx *cli.Context, cmds []cli.Command) {
 	command := ctx.Args().First()
 	if command == "" {
-		cli.ShowCommandHelp(ctx, command)
+		showCommandHelp(ctx, command)
 		return
 	}
 	msg := fmt.Sprintf("`%s` is not a recognized command. Get help using `--help` flag.", command)
@@ -425,7 +425,7 @@ func registerApp(name string) *cli.App {
 		if ctx.Args().First() != "" {
 			commandNotFound(ctx, app.Commands)
 		} else {
-			cli.ShowAppHelp(ctx)
+			showCommandHelp(ctx, "")
 		}
 
 		return exitStatus(globalErrorExitStatus)

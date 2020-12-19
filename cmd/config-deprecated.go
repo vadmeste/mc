@@ -22,7 +22,7 @@ var configCmd = cli.Command{
 	Name:  "config",
 	Usage: "configure MinIO client",
 	Action: func(ctx *cli.Context) error {
-		cli.ShowCommandHelp(ctx, ctx.Args().First())
+		showCommandHelp(ctx, ctx.Args().First())
 		return nil
 	},
 	Hidden:          true,
@@ -38,7 +38,7 @@ var configHostCmd = cli.Command{
 	Name:  "host",
 	Usage: "add, remove and list hosts in configuration file",
 	Action: func(ctx *cli.Context) error {
-		cli.ShowCommandHelp(ctx, ctx.Args().First())
+		showCommandHelp(ctx, ctx.Args().First())
 		return nil
 	},
 	Before: setGlobalsFromContext,

@@ -76,7 +76,7 @@ EXAMPLES:
 // checkAdminInfoSyntax - validate arguments passed by a user
 func checkAdminHealthSyntax(ctx *cli.Context) {
 	if len(ctx.Args()) == 0 || len(ctx.Args()) > 1 {
-		cli.ShowCommandHelpAndExit(ctx, "health", 1) // last argument is exit code
+		showCommandHelpAndExit(ctx, "health", 1) // last argument is exit code
 	}
 }
 

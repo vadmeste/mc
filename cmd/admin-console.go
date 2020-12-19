@@ -76,7 +76,7 @@ EXAMPLES:
 
 func checkAdminLogSyntax(ctx *cli.Context) {
 	if len(ctx.Args()) == 0 || len(ctx.Args()) > 3 {
-		cli.ShowCommandHelpAndExit(ctx, "console", 1) // last argument is exit code
+		showCommandHelpAndExit(ctx, "console", 1) // last argument is exit code
 	}
 }
 

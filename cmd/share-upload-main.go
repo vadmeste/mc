@@ -73,7 +73,7 @@ EXAMPLES:
 func checkShareUploadSyntax(ctx *cli.Context) {
 	args := ctx.Args()
 	if !args.Present() {
-		cli.ShowCommandHelpAndExit(ctx, "upload", 1) // last argument is exit code.
+		showCommandHelpAndExit(ctx, "upload", 1) // last argument is exit code.
 	}
 
 	// Set command flags from context.

@@ -25,6 +25,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -33,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 
@@ -432,4 +434,59 @@ func centerText(s string, w int) string {
 	fmt.Fprintf(&sb, "%s", s)
 	fmt.Fprintf(&sb, "%s", bytes.Repeat([]byte{' '}, int(math.Floor(padding))))
 	return sb.String()
+}
+
+func showHelp(ctx *cli.Context, command string, app bool) (err error) {
+	printHelp := func() {
+		if app {
+			cli.ShowAppHelp(ctx)
+			return
+		}
+		cli.ShowCommandHelp(ctx, command)
+	}
+
+	defer func() {
+		if err != nil {
+			ctx.App.Writer = os.Stdout
+			ctx.App.ErrWriter = os.Stderr
+			printHelp()
+		}
+	}()
+
+	if _, err := os.Stat("/usr/bin/more"); os.IsNotExist(err) {
+		return err
+	}
+
+	cmd := exec.Command("/usr/bin/more")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	ctx.App.Writer = stdin
+	ctx.App.ErrWriter = stdin
+	printHelp()
+	stdin.Close()
+
+	cmd.Wait()
+	return nil
+}
+
+func showCommandHelp(ctx *cli.Context, command string) {
+	showHelp(ctx, command, false)
+}
+
+func showAppHelp(ctx *cli.Context, command string) {
+	showHelp(ctx, "", true)
+}
+
+func showCommandHelpAndExit(ctx *cli.Context, command string, code int) {
+	showCommandHelp(ctx, command)
+	os.Exit(code)
 }

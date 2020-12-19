@@ -184,7 +184,7 @@ func du(urlStr string, timeRef time.Time, withVersions bool, depth int, encKeyDB
 // main for du command.
 func mainDu(ctx *cli.Context) error {
 	if !ctx.Args().Present() {
-		cli.ShowCommandHelpAndExit(ctx, "du", 1)
+		showCommandHelpAndExit(ctx, "du", 1)
 	}
 
 	// Set colors.

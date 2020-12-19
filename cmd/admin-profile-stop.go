@@ -52,7 +52,7 @@ EXAMPLES:
 
 func checkAdminProfileStopSyntax(ctx *cli.Context) {
 	if len(ctx.Args()) != 1 {
-		cli.ShowCommandHelpAndExit(ctx, "stop", 1) // last argument is exit code
+		showCommandHelpAndExit(ctx, "stop", 1) // last argument is exit code
 	}
 }
 

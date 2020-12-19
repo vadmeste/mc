@@ -449,7 +449,7 @@ func (s updateMessage) JSON() string {
 
 func mainUpdate(ctx *cli.Context) {
 	if len(ctx.Args()) != 0 {
-		cli.ShowCommandHelpAndExit(ctx, "update", -1)
+		showCommandHelpAndExit(ctx, "update", -1)
 	}
 
 	globalQuiet = ctx.Bool("quiet") || ctx.GlobalBool("quiet")

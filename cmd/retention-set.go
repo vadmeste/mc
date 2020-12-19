@@ -136,7 +136,7 @@ func mainRetentionSet(cliCtx *cli.Context) error {
 	console.SetColor("RetentionFailure", color.New(color.FgYellow))
 
 	if len(cliCtx.Args()) != 3 {
-		cli.ShowCommandHelpAndExit(cliCtx, "set", 1)
+		showCommandHelpAndExit(cliCtx, "set", 1)
 	}
 
 	target, versionID, recursive, rewind, withVersions, mode, validity, unit, bypass, bucketMode := parseSetRetentionArgs(cliCtx)

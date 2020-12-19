@@ -63,7 +63,7 @@ EXAMPLES:
 func checkAdminProfileStartSyntax(ctx *cli.Context) {
 	// Check flags combinations
 	if len(ctx.Args()) != 1 {
-		cli.ShowCommandHelpAndExit(ctx, "start", 1) // last argument is exit code
+		showCommandHelpAndExit(ctx, "start", 1) // last argument is exit code
 	}
 
 	s := set.NewStringSet()
