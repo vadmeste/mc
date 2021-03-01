@@ -24,6 +24,7 @@ require (
 	github.com/rjeczalik/notify v0.9.2
 	github.com/rs/xid v1.2.1
 	github.com/shirou/gopsutil v3.20.11+incompatible
+	github.com/shirou/gopsutil/v3 v3.21.2
 	go.uber.org/zap v1.14.1 // indirect
 	golang.org/x/crypto v0.0.0-20201124201722-c8d3bf9c5392
 	golang.org/x/net v0.0.0-20201216054612-986b41b23924
