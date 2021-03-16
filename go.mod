@@ -9,7 +9,7 @@ require (
 	github.com/fatih/color v1.10.0
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/json-iterator/go v1.1.10
-	github.com/klauspost/compress v1.11.7
+	github.com/klauspost/compress v1.11.12
 	github.com/mattn/go-ieproxy v0.0.1
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mattn/go-runewidth v0.0.9 // indirect
@@ -33,3 +33,5 @@ require (
 	gopkg.in/h2non/filetype.v1 v1.0.5
 	gopkg.in/yaml.v2 v2.3.0
 )
+
+replace github.com/minio/minio => /home/vadmeste/work/gospace/src/github.com/minio/minio
