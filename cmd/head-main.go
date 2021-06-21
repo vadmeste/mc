@@ -99,7 +99,7 @@ func headURL(sourceURL, sourceVersion string, timeRef time.Time, encKeyDB map[st
 	default:
 		var err *probe.Error
 		var metadata map[string]string
-		if reader, metadata, err = getSourceStreamMetadataFromURL(context.Background(), sourceURL, sourceVersion, timeRef, encKeyDB); err != nil {
+		if reader, _, metadata, err = getSourceStreamMetadataFromURL(context.Background(), sourceURL, sourceVersion, timeRef, encKeyDB); err != nil {
 			return err.Trace(sourceURL)
 		}
 		ctype := metadata["Content-Type"]
