@@ -208,6 +208,8 @@ type mirrorOptions struct {
 	excludeOptions                    []string
 	encKeyDB                          map[string][]prefixSSEPair
 	md5, disableMultipart             bool
+	partSize                          uint64
+	partThreads                       uint
 	olderThan, newerThan              string
 	storageClass                      string
 	userMetadata                      map[string]string

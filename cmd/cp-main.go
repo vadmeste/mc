@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/cli"
@@ -77,6 +78,14 @@ var (
 		cli.BoolFlag{
 			Name:  "preserve, a",
 			Usage: "preserve filesystem attributes (mode, ownership, timestamps)",
+		},
+		cli.StringFlag{
+			Name:  "part-size",
+			Usage: "set the size of a part in a multipart upload",
+		},
+		cli.IntFlag{
+			Name:  "part-threads",
+			Usage: "set the number of parallel parts uploads",
 		},
 		cli.BoolFlag{
 			Name:  "disable-multipart",
@@ -522,6 +531,8 @@ func doCopySession(ctx context.Context, cancelCopy context.CancelFunc, cli *cli.
 
 				cpURLs.MD5 = cli.Bool("md5") || withLock
 				cpURLs.DisableMultipart = cli.Bool("disable-multipart")
+				cpURLs.MultipartSize, _ = parseMultipartSize(cli.String("part-size"))
+				cpURLs.MultipartThreads = uint(cli.Int("part-threads"))
 
 				// Verify if previously copied, notify progress bar.
 				if isCopied != nil && isCopied(cpURLs.SourceContent.URL.String()) {
@@ -621,6 +632,13 @@ loop:
 	return retErr
 }
 
+func parseMultipartSize(multipartSizeStr string) (uint64, error) {
+	if multipartSizeStr == "" {
+		return 0, nil
+	}
+	return humanize.ParseBytes(multipartSizeStr)
+}
+
 // mainCopy is the entry point for cp command.
 func mainCopy(cliCtx *cli.Context) error {
 	ctx, cancelCopy := context.WithCancel(globalContext)
@@ -646,6 +664,12 @@ func mainCopy(cliCtx *cli.Context) error {
 	recursive := cliCtx.Bool("recursive")
 	rewind := cliCtx.String("rewind")
 	versionID := cliCtx.String("version-id")
+
+	partSize := cliCtx.String("part-size")
+	_, e := parseMultipartSize(partSize)
+	fatalIf(probe.NewError(e), "Unable to parse the part-size argument")
+	partThreads := cliCtx.Int("part-threads")
+
 	olderThan := cliCtx.String("older-than")
 	newerThan := cliCtx.String("newer-than")
 	storageClass := cliCtx.String("storage-class")
@@ -677,6 +701,8 @@ func mainCopy(cliCtx *cli.Context) error {
 			session.Header.CommandBoolFlags["recursive"] = recursive
 			session.Header.CommandStringFlags["rewind"] = rewind
 			session.Header.CommandStringFlags["version-id"] = versionID
+			session.Header.CommandStringFlags["part-size"] = partSize
+			session.Header.CommandIntFlags["part-threads"] = partThreads
 			session.Header.CommandStringFlags["older-than"] = olderThan
 			session.Header.CommandStringFlags["newer-than"] = newerThan
 			session.Header.CommandStringFlags["storage-class"] = storageClass
@@ -706,7 +732,7 @@ func mainCopy(cliCtx *cli.Context) error {
 		}
 	}
 
-	e := doCopySession(ctx, cancelCopy, cliCtx, session, encKeyDB, false)
+	e = doCopySession(ctx, cancelCopy, cliCtx, session, encKeyDB, false)
 	if session != nil {
 		session.Delete()
 	}

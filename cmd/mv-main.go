@@ -68,6 +68,14 @@ var (
 			Name:  "disable-multipart",
 			Usage: "disable multipart upload feature",
 		},
+		cli.StringFlag{
+			Name:  "part-size",
+			Usage: "set the size of a part in a multipart upload",
+		},
+		cli.IntFlag{
+			Name:  "part-threads",
+			Usage: "set the number of parallel parts uploads",
+		},
 	}
 )
 
@@ -261,6 +269,12 @@ func mainMove(cliCtx *cli.Context) error {
 	olderThan := cliCtx.String("older-than")
 	newerThan := cliCtx.String("newer-than")
 	storageClass := cliCtx.String("storage-class")
+
+	partSize := cliCtx.String("part-size")
+	_, e := parseMultipartSize(partSize)
+	fatalIf(probe.NewError(e), "Unable to parse the part-size argument")
+	partThreads := cliCtx.Int("part-threads")
+
 	sseKeys := os.Getenv("MC_ENCRYPT_KEY")
 	if key := cliCtx.String("encrypt-key"); key != "" {
 		sseKeys = key
@@ -284,6 +298,8 @@ func mainMove(cliCtx *cli.Context) error {
 			session.Header.CommandType = "mv"
 			session.Header.CommandBoolFlags["recursive"] = recursive
 			session.Header.CommandStringFlags["older-than"] = olderThan
+			session.Header.CommandStringFlags["part-size"] = partSize
+			session.Header.CommandIntFlags["part-threads"] = partThreads
 			session.Header.CommandStringFlags["newer-than"] = newerThan
 			session.Header.CommandStringFlags["storage-class"] = storageClass
 			session.Header.CommandStringFlags["encrypt-key"] = sseKeys
@@ -307,7 +323,7 @@ func mainMove(cliCtx *cli.Context) error {
 		}
 	}
 
-	e := doCopySession(ctx, cancelMove, cliCtx, session, encKeyDB, true)
+	e = doCopySession(ctx, cancelMove, cliCtx, session, encKeyDB, true)
 	if session != nil {
 		session.Delete()
 	}
