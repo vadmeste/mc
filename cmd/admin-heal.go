@@ -130,9 +130,11 @@ func (s stopHealMessage) JSON() string {
 
 // verboseBackgroundHealStatusMessage is container for stop heal success and failure messages.
 type verboseBackgroundHealStatusMessage struct {
-	Status       string `json:"status"`
-	HealInfo     madmin.BgHealState
-	StorageClass string `json:"-"`
+	Status   string `json:"status"`
+	HealInfo madmin.BgHealState
+
+	// Specify storage class to show servers/disks tolerance
+	ToleranceForSC string `json:"-"`
 }
 
 type setIndex struct {
@@ -168,11 +170,11 @@ type setStatus struct {
 }
 
 type diskStatus struct {
-	set             setIndex
-	path            string
-	state           string
-	healing         bool
-	used, available int64
+	set         setIndex
+	path        string
+	state       string
+	healing     bool
+	used, total uint64
 }
 
 type serverStatus struct {
@@ -247,6 +249,8 @@ func generateServersStatus(disks []madmin.Disk) map[string]serverStatus {
 			path:    u.Path,
 			state:   d.State,
 			healing: d.Healing,
+			used:    d.UsedSpace,
+			total:   d.TotalSpace,
 		})
 		m[u.Host] = serverSt
 	}
@@ -315,7 +319,7 @@ func (s verboseBackgroundHealStatusMessage) String() string {
 	fmt.Fprintf(&msg, "Servers status:\n")
 	fmt.Fprintf(&msg, "==============\n")
 
-	parity, showFailure := s.HealInfo.SCParity[s.StorageClass]
+	parity, showFailure := s.HealInfo.SCParity[s.ToleranceForSC]
 
 	allDisks := getAllDisks(s.HealInfo.Sets)
 
@@ -331,9 +335,9 @@ func (s verboseBackgroundHealStatusMessage) String() string {
 
 	for endpoint, serverStatus := range serversStatus {
 		fmt.Fprintf(&msg, "%s:\n", endpoint)
-		fmt.Fprintf(&msg, "  - Pool : %d\n", serverStatus.pool+1)
+		fmt.Fprintf(&msg, "  + Pool : %d\n", serverStatus.pool+1)
 		if showFailure {
-			fmt.Fprintf(&msg, "  Tolerance : %d\n", poolsTolerance[serverStatus.pool].tolerance)
+			fmt.Fprintf(&msg, "  + Tolerance : %d\n", poolsTolerance[serverStatus.pool].tolerance)
 		}
 		for _, d := range serverStatus.disks {
 			state := d.state
@@ -344,7 +348,7 @@ func (s verboseBackgroundHealStatusMessage) String() string {
 			if d.healing {
 				fmt.Fprintf(&msg, "    |_ Estimated : %s\n", setsStatus[d.set].healing.ETA())
 			}
-			fmt.Fprintf(&msg, "    |_ Capacity : %d/%d\n", d.used, d.used+d.available)
+			fmt.Fprintf(&msg, "    |_ Capacity : %s/%s\n", humanize.IBytes(d.used), humanize.IBytes(d.total))
 			if showFailure {
 				fmt.Fprintf(&msg, "    |_ Tolerance : %d\n", parity-setsStatus[d.set].incapableDisks)
 			}
@@ -545,7 +549,11 @@ func mainAdminHeal(ctx *cli.Context) error {
 	if bucket == "" && !ctx.Bool("recursive") {
 		bgHealStatus, berr := adminClnt.BackgroundHealStatus(globalContext)
 		fatalIf(probe.NewError(berr), "Failed to get the status of the background heal.")
-		printMsg(verboseBackgroundHealStatusMessage{Status: "success", HealInfo: bgHealStatus, StorageClass: strings.ToUpper(ctx.String("storage-class"))})
+		printMsg(verboseBackgroundHealStatusMessage{
+			Status:         "success",
+			HealInfo:       bgHealStatus,
+			ToleranceForSC: strings.ToUpper(ctx.String("storage-class")),
+		})
 		return nil
 	}
 
