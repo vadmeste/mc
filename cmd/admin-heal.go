@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	stdjson "encoding/json"
+
 	humanize "github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"github.com/minio/cli"
@@ -273,7 +275,9 @@ func computePoolTolerance(pool, parity int, serversStatus map[string]serverStatu
 		onlineDisksPerSet[set] = setStatus.total - setStatus.incapableDisks
 		tolerancePerSet[set] = 0
 
+		fmt.Println("!", len(serversStatus))
 		for endpoint, server := range serversStatus {
+			fmt.Println("!", endpoint)
 			if server.pool != pool {
 				continue
 			}
@@ -314,6 +318,10 @@ func computePoolTolerance(pool, parity int, serversStatus map[string]serverStatu
 
 // String colorized to show background heal status message.
 func (s verboseBackgroundHealStatusMessage) String() string {
+
+	v, _ := stdjson.Marshal(s.HealInfo)
+	return string(v)
+
 	var msg strings.Builder
 
 	fmt.Fprintf(&msg, "Servers status:\n")

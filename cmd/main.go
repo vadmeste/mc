@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"bytes"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,7 +34,9 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/cli"
+	"github.com/minio/madmin-go"
 	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/pkg/console"
 	"github.com/minio/pkg/trie"
@@ -76,8 +79,78 @@ VERSION:
   {{$value}}
 {{end}}`
 
+var j = `
+{"ScannedItemsCount":11,"HealDisks":null,"sets":[{"id":"0-0","pool_index":0,"set_index":0,"heal_status":"","heal_priority":"","total_objects":0,"disks":[{"endpoint":"http://localhost:9001/tmp/xl/1","rootDisk":true,"path":"/tmp/xl/1","state":"ok","uuid":"49d9d5f2-6201-4c21-8d09-7164bfe4e4ea","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{"apiLatencies":{"AppendFile":"0s","CheckParts":"0s","CreateFile":"0s","Delete":"218.966µs","DeleteVersion":"0s","DeleteVersions":"0s","DeleteVol":"0s","ListDir":"0s","ListVols":"221.722µs","MakeVol":"0s","MakeVolBulk":"77.049µs","ReadAll":"18.521µs","ReadFile":"0s","ReadFileStream":"0s","ReadVersion":"49.611µs","RenameData":"27.54442ms","RenameFile":"40.646µs","StatVol":"37µs","UpdateMetadata":"0s","VerifyFile":"0s","WalkDir":"910.137µs","WriteAll":"7.06607ms","WriteMetadata":"0s","storageStatInfoFile":"0s"},"apiCalls":{"AppendFile":0,"CheckParts":0,"CreateFile":0,"Delete":1,"DeleteVersion":0,"DeleteVersions":0,"DeleteVol":0,"ListDir":0,"ListVols":2601,"MakeVol":0,"MakeVolBulk":1,"ReadAll":1,"ReadFile":0,"ReadFileStream":0,"ReadVersion":40,"RenameData":744,"RenameFile":1,"StatVol":1946,"UpdateMetadata":0,"VerifyFile":0,"WalkDir":213,"WriteAll":1,"WriteMetadata":0,"storageStatInfoFile":0}},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":0},{"endpoint":"http://localhost:9002/tmp/xl/2","rootDisk":true,"path":"/tmp/xl/2","state":"ok","uuid":"4705e398-5493-43d1-8d99-fe4e173429df","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":1},{"endpoint":"http://localhost:9003/tmp/xl/3","rootDisk":true,"path":"/tmp/xl/3","state":"ok","uuid":"e5002524-ff20-4d0f-8e79-49a62c8f9190","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":2},{"endpoint":"http://localhost:9004/tmp/xl/4","rootDisk":true,"path":"/tmp/xl/4","state":"ok","uuid":"55e88871-81c9-4bd3-a699-3ef6cb6c7e96","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":3},{"endpoint":"http://localhost:9005/tmp/xl/5","rootDisk":true,"path":"/tmp/xl/5","state":"ok","uuid":"74b393f6-e9af-42ec-b4a1-9adf667e503a","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":4},{"endpoint":"http://localhost:9006/tmp/xl/6","rootDisk":true,"path":"/tmp/xl/6","state":"ok","uuid":"b4a2f0ac-b25a-477c-8cbe-25b54a068f44","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":5},{"endpoint":"http://localhost:9007/tmp/xl/7","rootDisk":true,"path":"/tmp/xl/7","state":"ok","uuid":"06056200-96fc-4ac6-bfd5-f1a812b1be58","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":6},{"endpoint":"http://localhost:9008/tmp/xl/8","rootDisk":true,"path":"/tmp/xl/8","state":"ok","uuid":"f6dfac66-9437-4ea1-9ee8-77b7c3981731","totalspace":101187674112,"usedspace":27540430848,"availspace":73647243264,"metrics":{},"free_inodes":6165803,"pool_index":0,"set_index":0,"disk_index":7}]}],"mrf":{"localhost:9001":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9002":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9003":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9004":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9005":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9006":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9007":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"},"localhost:9008":{"bytes_healed":0,"items_healed":0,"total_items":0,"total_bytes":0,"started":"0001-01-01T00:00:00Z"}},"sc_parity":{"REDUCED_REDUNDANCY":2,"STANDARD":4}}
+`
+
+// String colorized to show background heal status message.
+func testJSON() string {
+
+	var msg strings.Builder
+
+	var healInfo madmin.BgHealState
+	_ = stdjson.Unmarshal([]byte(j), &healInfo)
+
+	parity, showFailure := healInfo.SCParity["STANDARD"]
+
+	allDisks := getAllDisks(healInfo.Sets)
+
+	setsStatus := generateSetsStatus(allDisks)
+	serversStatus := generateServersStatus(allDisks)
+
+	var poolsTolerance = make(map[int]poolStatus)
+	pools := getPoolsIndexes(allDisks)
+	for _, pool := range pools {
+		tolerance, endpoints := computePoolTolerance(pool, parity, serversStatus, setsStatus)
+		poolsTolerance[pool] = poolStatus{tolerance: tolerance, endpoints: endpoints}
+	}
+
+	for endpoint, serverStatus := range serversStatus {
+		fmt.Fprintf(&msg, "%s:\n", endpoint)
+		fmt.Fprintf(&msg, "  + Pool : %d\n", serverStatus.pool+1)
+		if showFailure {
+			fmt.Fprintf(&msg, "  + Tolerance : %d\n", poolsTolerance[serverStatus.pool].tolerance)
+		}
+		for _, d := range serverStatus.disks {
+			state := d.state
+			if state == "ok" && d.healing {
+				state = "healing"
+			}
+			fmt.Fprintf(&msg, "  |_ %s : %s\n", d.path, state)
+			if d.healing {
+				fmt.Fprintf(&msg, "    |_ Estimated : %s\n", setsStatus[d.set].healing.ETA())
+			}
+			fmt.Fprintf(&msg, "    |_ Capacity : %s/%s\n", humanize.IBytes(d.used), humanize.IBytes(d.total))
+			if showFailure {
+				fmt.Fprintf(&msg, "    |_ Tolerance : %d\n", parity-setsStatus[d.set].incapableDisks)
+			}
+		}
+
+		fmt.Fprintf(&msg, "\n")
+	}
+
+	if showFailure {
+		fmt.Fprintf(&msg, "Server Failure Tolerance:\n")
+		fmt.Fprintf(&msg, "========================\n")
+		for _, pool := range poolsTolerance {
+			fmt.Fprintf(&msg, "Pool 1:\n")
+			fmt.Fprintf(&msg, "   Tolerance : %d server(s)\n", pool.tolerance)
+			fmt.Fprintf(&msg, "       Nodes :")
+			for _, endpoint := range pool.endpoints {
+				fmt.Fprintf(&msg, " %s", endpoint)
+			}
+			fmt.Fprintf(&msg, "\n")
+		}
+	}
+
+	return msg.String()
+}
+
 // Main starts mc application
 func Main(args []string) {
+
+	testJSON()
+	return
 
 	if len(args) > 1 {
 		switch args[1] {
