@@ -18,58 +18,58 @@
 package cmd
 
 import (
-	"context"
-	"fmt"
-	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/cli"
-	json "github.com/minio/colorjson"
-	"github.com/minio/madmin-go"
 	"github.com/minio/mc/pkg/probe"
 )
+
+var globalPerfTestVerbose bool
 
 var supportPerfFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "duration",
-		Usage: "duration the entire perf tests are run",
+		Usage: "duration for each perf test is run",
 		Value: "10s",
 	},
+	cli.BoolFlag{
+		Name:  "verbose, v",
+		Usage: "display per-server stats",
+	},
 	cli.StringFlag{
-		Name:  "size",
-		Usage: "size of the object used for uploads/downloads",
-		Value: "64MiB",
+		Name:   "size",
+		Usage:  "size of the object used for uploads/downloads",
+		Value:  "64MiB",
+		Hidden: true,
 	},
 	cli.IntFlag{
-		Name:  "concurrent",
-		Usage: "number of concurrent requests per server",
-		Value: 32,
+		Name:   "concurrent",
+		Usage:  "number of concurrent requests per server",
+		Value:  32,
+		Hidden: true,
 	},
 	cli.StringFlag{
 		Name:   "bucket",
 		Usage:  "provide a custom bucket name to use (NOTE: bucket must be created prior)",
 		Hidden: true, // Hidden for now.
 	},
-	cli.BoolFlag{
-		Name:  "verbose, v",
-		Usage: "display per-server stats",
-	},
 	// Drive test specific flags.
 	cli.StringFlag{
-		Name:  "filesize",
-		Usage: "total amount of data read/written to each drive",
-		Value: "1GiB",
+		Name:   "filesize",
+		Usage:  "total amount of data read/written to each drive",
+		Value:  "1GiB",
+		Hidden: true,
 	},
 	cli.StringFlag{
-		Name:  "blocksize",
-		Usage: "read/write block size",
-		Value: "4MiB",
+		Name:   "blocksize",
+		Usage:  "read/write block size",
+		Value:  "4MiB",
+		Hidden: true,
 	},
 	cli.BoolFlag{
-		Name:  "serial",
-		Usage: "run tests on drive(s) one-by-one",
+		Name:   "serial",
+		Usage:  "run tests on drive(s) one-by-one",
+		Hidden: true,
 	},
 }
 
@@ -87,188 +87,53 @@ var supportPerfCmd = cli.Command{
 USAGE:
   {{.HelpName}} [COMMAND] [FLAGS] TARGET
 
-COMMAND:
-  drive  measure speed of drive in a cluster
-  object measure speed of reading and writing object in a cluster
-  net    measure network throughput of all nodes
-
 FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 
 EXAMPLES:
-  1. Run object speed measurement with autotuning the concurrency to obtain maximum throughput and IOPs:
-     {{.Prompt}} {{.HelpName}} object myminio/
-
-  2. Run object speed measurement for 20 seconds with object size of 128MiB with autotuning the concurrency to obtain maximum throughput:
-     {{.Prompt}} {{.HelpName}} object myminio/ --duration 20s --size 128MiB
-
-  3. Run drive speed measurements on all drive on all nodes (with default blockSize of 4MiB):
-     {{.Prompt}} {{.HelpName}} drive myminio/
-
-  4. Run drive speed measurements with blocksize of 64KiB, and 2GiB of data read/written from each drive:
-     {{.Prompt}} {{.HelpName}} drive myminio/ --blocksize 64KiB --filesize 2GiB
-
-  5. Run network throughput test:
-     {{.Prompt}} {{.HelpName}} net myminio
+  1. Run all speed measurement tests in 'myminio' cluster
+     {{.Prompt}} {{.HelpName}} myminio/
 `,
 }
 
-func (s speedTestResult) StringVerbose() (msg string) {
-	result := s.result
-	if globalPerfTestVerbose {
-		msg += "\n\n"
-		msg += "PUT:\n"
-		for _, node := range result.PUTStats.Servers {
-			msg += fmt.Sprintf("   * %s: %s/s %s objs/s", node.Endpoint, humanize.IBytes(node.ThroughputPerSec), humanize.Comma(int64(node.ObjectsPerSec)))
-			if node.Err != "" {
-				msg += " Err: " + node.Err
-			}
-			msg += "\n"
-		}
-
-		msg += "GET:\n"
-		for _, node := range result.GETStats.Servers {
-			msg += fmt.Sprintf("   * %s: %s/s %s objs/s", node.Endpoint, humanize.IBytes(node.ThroughputPerSec), humanize.Comma(int64(node.ObjectsPerSec)))
-			if node.Err != "" {
-				msg += " Err: " + node.Err
-			}
-			msg += "\n"
-		}
-
-	}
-	return msg
-}
-
-func (s speedTestResult) String() (msg string) {
-	result := s.result
-	msg += fmt.Sprintf("MinIO %s, %d servers, %d drives, %s objects, %d threads",
-		result.Version, result.Servers, result.Disks,
-		humanize.IBytes(uint64(result.Size)), result.Concurrent)
-
-	return msg
-}
-
-func (s speedTestResult) JSON() string {
-	JSONBytes, e := json.MarshalIndent(s.result, "", "    ")
-	fatalIf(probe.NewError(e), "Unable to marshal into JSON.")
-	return string(JSONBytes)
-}
-
-var globalPerfTestVerbose bool
-
-func mainSupportPerf(ctx *cli.Context) error {
-	args := ctx.Args()
-
-	// the alias parameter from cli
-	aliasedURL := ""
-	switch len(args) {
-	case 1:
-		// cannot use alias by the name 'drive' or 'net'
-		if args[0] == "drive" || args[0] == "net" {
-			cli.ShowCommandHelpAndExit(ctx, "perf", 1)
-		}
-		aliasedURL = args[0]
-	case 2:
-		switch args[0] {
-		case "drive":
-			aliasedURL = args[1]
-			return mainAdminSpeedTestDrive(ctx, aliasedURL)
-		case "object":
-			aliasedURL = args[1]
-		case "net":
-			aliasedURL = args[1]
-			return mainAdminSpeedTestNetperf(ctx, aliasedURL)
-		default:
-			cli.ShowCommandHelpAndExit(ctx, "perf", 1) // last argument is exit code
-		}
-	default:
-		cli.ShowCommandHelpAndExit(ctx, "perf", 1) // last argument is exit code
-	}
-
-	client, perr := newAdminClient(aliasedURL)
-	if perr != nil {
-		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
-		return nil
-	}
-
-	ctxt, cancel := context.WithCancel(globalContext)
-	defer cancel()
-
+func checkSupportPerfSyntax(ctx *cli.Context) {
 	duration, e := time.ParseDuration(ctx.String("duration"))
 	if e != nil {
 		fatalIf(probe.NewError(e), "Unable to parse duration")
-		return nil
 	}
 	if duration <= 0 {
 		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
-		return nil
 	}
-	size, e := humanize.ParseBytes(ctx.String("size"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse object size")
-		return nil
+	if len(ctx.Args()) == 0 || len(ctx.Args()) > 2 {
+		cli.ShowCommandHelpAndExit(ctx, "perf", 1) // last argument is exit code
 	}
-	if size < 0 {
-		fatalIf(errInvalidArgument(), "size is expected to be atleast 0 bytes")
-		return nil
-	}
-	concurrent := ctx.Int("concurrent")
-	if concurrent <= 0 {
-		fatalIf(errInvalidArgument(), "concurrency cannot be '0' or negative")
-		return nil
-	}
-	globalPerfTestVerbose = ctx.Bool("verbose")
+}
 
-	// Turn-off autotuning only when "concurrent" is specified
-	// in all other scenarios keep auto-tuning on.
-	autotune := !ctx.IsSet("concurrent")
+func mainSupportPerf(ctx *cli.Context) error {
+	checkSupportPerfSyntax(ctx)
 
-	resultCh, err := client.Speedtest(ctxt, madmin.SpeedtestOpts{
-		Size:        int(size),
-		Duration:    duration,
-		Concurrency: concurrent,
-		Autotune:    autotune,
-		Bucket:      ctx.String("bucket"), // This is a hidden flag.
-	})
-	fatalIf(probe.NewError(err), "Failed to execute performance test")
-
-	if globalJSON {
-		for result := range resultCh {
-			if result.Version == "" {
-				continue
-			}
-			printMsg(speedTestResult{
-				result: &result,
-			})
+	args := ctx.Args()
+	switch len(args) {
+	case 1:
+		aliasedURL := args.Get(0)
+		mainSpeedTestNetperf(ctx, aliasedURL)
+		mainSpeedTestDrive(ctx, aliasedURL)
+		return mainSpeedTestObject(ctx, aliasedURL)
+	case 2:
+		aliasedURL := args.Get(1)
+		switch args[0] {
+		case "drive":
+			return mainSpeedTestDrive(ctx, aliasedURL)
+		case "object":
+			return mainSpeedTestObject(ctx, aliasedURL)
+		case "net":
+			return mainSpeedTestNetperf(ctx, aliasedURL)
+		default:
+			cli.ShowCommandHelpAndExit(ctx, "perf", 1)
 		}
-		return nil
 	}
 
-	done := make(chan struct{})
-
-	p := tea.NewProgram(initSpeedTestUI())
-	go func() {
-		if e := p.Start(); e != nil {
-			os.Exit(1)
-		}
-		close(done)
-	}()
-
-	go func() {
-		var result madmin.SpeedTestResult
-		for result = range resultCh {
-			p.Send(speedTestResult{
-				result: &result,
-			})
-		}
-		p.Send(speedTestResult{
-			result: &result,
-			final:  true,
-		})
-	}()
-
-	<-done
-
+	cli.ShowCommandHelpAndExit(ctx, "perf", 1)
 	return nil
 }

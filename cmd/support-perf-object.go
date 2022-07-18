@@ -18,10 +18,21 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/cli"
+	json "github.com/minio/colorjson"
+	"github.com/minio/madmin-go"
+	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/pkg/console"
 )
 
+// Deprecated June 2022
 var adminSpeedtestCmd = cli.Command{
 	Name:               "speedtest",
 	Usage:              "Run server side speed test",
@@ -33,7 +44,138 @@ var adminSpeedtestCmd = cli.Command{
 	CustomHelpTemplate: "Please use 'mc support perf'",
 }
 
+// Deprecated June 2022
 func mainAdminSpeedtest(ctx *cli.Context) error {
 	console.Infoln("Please use 'mc support perf'")
+	return nil
+}
+
+// Object speed test
+
+func (s speedTestResult) StringVerbose() (msg string) {
+	result := s.result
+	if globalPerfTestVerbose {
+		msg += "\n\n"
+		msg += "PUT:\n"
+		for _, node := range result.PUTStats.Servers {
+			msg += fmt.Sprintf("   * %s: %s/s %s objs/s", node.Endpoint, humanize.IBytes(node.ThroughputPerSec), humanize.Comma(int64(node.ObjectsPerSec)))
+			if node.Err != "" {
+				msg += " Err: " + node.Err
+			}
+			msg += "\n"
+		}
+
+		msg += "GET:\n"
+		for _, node := range result.GETStats.Servers {
+			msg += fmt.Sprintf("   * %s: %s/s %s objs/s", node.Endpoint, humanize.IBytes(node.ThroughputPerSec), humanize.Comma(int64(node.ObjectsPerSec)))
+			if node.Err != "" {
+				msg += " Err: " + node.Err
+			}
+			msg += "\n"
+		}
+
+	}
+	return msg
+}
+
+func (s speedTestResult) String() (msg string) {
+	result := s.result
+	msg += fmt.Sprintf("MinIO %s, %d servers, %d drives, %s objects, %d threads",
+		result.Version, result.Servers, result.Disks,
+		humanize.IBytes(uint64(result.Size)), result.Concurrent)
+
+	return msg
+}
+
+func (s speedTestResult) JSON() string {
+	JSONBytes, e := json.MarshalIndent(s.result, "", "    ")
+	fatalIf(probe.NewError(e), "Unable to marshal into JSON.")
+	return string(JSONBytes)
+}
+
+func mainSpeedTestObject(ctx *cli.Context, aliasedURL string) error {
+	client, perr := newAdminClient(aliasedURL)
+	if perr != nil {
+		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
+		return nil
+	}
+
+	ctxt, cancel := context.WithCancel(globalContext)
+	defer cancel()
+
+	duration, e := time.ParseDuration(ctx.String("duration"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse duration")
+		return nil
+	}
+	if duration <= 0 {
+		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
+		return nil
+	}
+	size, e := humanize.ParseBytes(ctx.String("size"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse object size")
+		return nil
+	}
+	if size < 0 {
+		fatalIf(errInvalidArgument(), "size is expected to be atleast 0 bytes")
+		return nil
+	}
+	concurrent := ctx.Int("concurrent")
+	if concurrent <= 0 {
+		fatalIf(errInvalidArgument(), "concurrency cannot be '0' or negative")
+		return nil
+	}
+	globalPerfTestVerbose = ctx.Bool("verbose")
+
+	// Turn-off autotuning only when "concurrent" is specified
+	// in all other scenarios keep auto-tuning on.
+	autotune := !ctx.IsSet("concurrent")
+
+	resultCh, err := client.Speedtest(ctxt, madmin.SpeedtestOpts{
+		Size:        int(size),
+		Duration:    duration,
+		Concurrency: concurrent,
+		Autotune:    autotune,
+		Bucket:      ctx.String("bucket"), // This is a hidden flag.
+	})
+	fatalIf(probe.NewError(err), "Failed to execute performance test")
+
+	if globalJSON {
+		for result := range resultCh {
+			if result.Version == "" {
+				continue
+			}
+			printMsg(speedTestResult{
+				result: &result,
+			})
+		}
+		return nil
+	}
+
+	done := make(chan struct{})
+
+	p := tea.NewProgram(initSpeedTestUI())
+	go func() {
+		if e := p.Start(); e != nil {
+			os.Exit(1)
+		}
+		close(done)
+	}()
+
+	go func() {
+		var result madmin.SpeedTestResult
+		for result = range resultCh {
+			p.Send(speedTestResult{
+				result: &result,
+			})
+		}
+		p.Send(speedTestResult{
+			result: &result,
+			final:  true,
+		})
+	}()
+
+	<-done
 	return nil
 }
