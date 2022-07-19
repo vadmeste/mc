@@ -24,7 +24,11 @@ import (
 	"github.com/minio/mc/pkg/probe"
 )
 
-var globalPerfTestVerbose bool
+var supportPerfSubcommands = []cli.Command{
+	supportPerfNetCmd,
+	supportPerfDriveCmd,
+	supportPerfObjectCmd,
+}
 
 var supportPerfFlags = []cli.Flag{
 	cli.StringFlag{
@@ -36,47 +40,13 @@ var supportPerfFlags = []cli.Flag{
 		Name:  "verbose, v",
 		Usage: "display per-server stats",
 	},
-	cli.StringFlag{
-		Name:   "size",
-		Usage:  "size of the object used for uploads/downloads",
-		Value:  "64MiB",
-		Hidden: true,
-	},
-	cli.IntFlag{
-		Name:   "concurrent",
-		Usage:  "number of concurrent requests per server",
-		Value:  32,
-		Hidden: true,
-	},
-	cli.StringFlag{
-		Name:   "bucket",
-		Usage:  "provide a custom bucket name to use (NOTE: bucket must be created prior)",
-		Hidden: true, // Hidden for now.
-	},
-	// Drive test specific flags.
-	cli.StringFlag{
-		Name:   "filesize",
-		Usage:  "total amount of data read/written to each drive",
-		Value:  "1GiB",
-		Hidden: true,
-	},
-	cli.StringFlag{
-		Name:   "blocksize",
-		Usage:  "read/write block size",
-		Value:  "4MiB",
-		Hidden: true,
-	},
-	cli.BoolFlag{
-		Name:   "serial",
-		Usage:  "run tests on drive(s) one-by-one",
-		Hidden: true,
-	},
 }
 
 var supportPerfCmd = cli.Command{
 	Name:            "perf",
 	Usage:           "analyze object, network and drive performance",
 	Action:          mainSupportPerf,
+	Subcommands:     supportPerfSubcommands,
 	OnUsageError:    onUsageError,
 	Before:          setGlobalsFromContext,
 	Flags:           append(supportPerfFlags, globalFlags...),
@@ -97,7 +67,11 @@ EXAMPLES:
 `,
 }
 
-func checkSupportPerfSyntax(ctx *cli.Context) {
+func mainSupportPerf(ctx *cli.Context) error {
+	if len(ctx.Args()) != 1 {
+		cli.ShowCommandHelpAndExit(ctx, "perf", 1) // last argument is exit code
+	}
+
 	duration, e := time.ParseDuration(ctx.String("duration"))
 	if e != nil {
 		fatalIf(probe.NewError(e), "Unable to parse duration")
@@ -105,35 +79,19 @@ func checkSupportPerfSyntax(ctx *cli.Context) {
 	if duration <= 0 {
 		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
 	}
-	if len(ctx.Args()) == 0 || len(ctx.Args()) > 2 {
-		cli.ShowCommandHelpAndExit(ctx, "perf", 1) // last argument is exit code
-	}
-}
 
-func mainSupportPerf(ctx *cli.Context) error {
-	checkSupportPerfSyntax(ctx)
+	verbose := ctx.Bool("verbose")
 
 	args := ctx.Args()
-	switch len(args) {
-	case 1:
-		aliasedURL := args.Get(0)
-		mainSpeedTestNetperf(ctx, aliasedURL)
-		mainSpeedTestDrive(ctx, aliasedURL)
-		return mainSpeedTestObject(ctx, aliasedURL)
-	case 2:
-		aliasedURL := args.Get(1)
-		switch args[0] {
-		case "drive":
-			return mainSpeedTestDrive(ctx, aliasedURL)
-		case "object":
-			return mainSpeedTestObject(ctx, aliasedURL)
-		case "net":
-			return mainSpeedTestNetperf(ctx, aliasedURL)
-		default:
-			cli.ShowCommandHelpAndExit(ctx, "perf", 1)
-		}
-	}
+	aliasedURL := args.Get(0)
 
-	cli.ShowCommandHelpAndExit(ctx, "perf", 1)
+	doPerfNet(globalContext, aliasedURL, duration)
+
+	doPerfDrive(globalContext, aliasedURL, perfDriveBlockSizeDefault,
+		perfDriveFileSizeDefault, perfDriveSerialDefault)
+
+	doPerfObject(globalContext, aliasedURL, duration, perfObjectSizeDefault,
+		perfObjectConcurrentDefault, perfObjectBucketDefault, false, verbose)
+
 	return nil
 }

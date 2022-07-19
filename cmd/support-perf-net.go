@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -28,6 +29,44 @@ import (
 	"github.com/minio/madmin-go"
 	"github.com/minio/mc/pkg/probe"
 )
+
+const (
+	perfNetDurationDefault = 10 * time.Second
+)
+
+var supportPerfNetFlags = []cli.Flag{
+	cli.StringFlag{
+		Name:  "duration",
+		Usage: "duration for each perf test is run",
+		Value: fmt.Sprintf("%ds", perfNetDurationDefault/time.Second),
+	},
+}
+
+var supportPerfNetCmd = cli.Command{
+	Name:            "net",
+	Usage:           "analyze network performance",
+	Action:          mainSupportPerfNet,
+	OnUsageError:    onUsageError,
+	Before:          setGlobalsFromContext,
+	Flags:           append(supportPerfNetFlags, globalFlags...),
+	HideHelpCommand: true,
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [COMMAND] [FLAGS] TARGET
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+
+EXAMPLES:
+  1. Run drive speed measurements on all drive on all nodes (with default blockSize of 4MiB):
+       {{.Prompt}} {{.HelpName}} drive myminio/
+  2. Run drive speed measurements with blocksize of 64KiB, and 2GiB of data read/written from each drive:
+       {{.Prompt}} {{.HelpName}} drive myminio/ --blocksize 64KiB --filesize 2GiB
+`,
+}
 
 type netperfResult madmin.NetperfResult
 
@@ -42,7 +81,7 @@ func (m netperfResult) JSON() string {
 	return string(JSONBytes)
 }
 
-func mainSpeedTestNetperf(ctx *cli.Context, aliasedURL string) error {
+func doPerfNet(ctx context.Context, aliasedURL string, duration time.Duration) error {
 	client, perr := newAdminClient(aliasedURL)
 	if perr != nil {
 		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
@@ -51,16 +90,6 @@ func mainSpeedTestNetperf(ctx *cli.Context, aliasedURL string) error {
 
 	ctxt, cancel := context.WithCancel(globalContext)
 	defer cancel()
-
-	duration, e := time.ParseDuration(ctx.String("duration"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse duration")
-		return nil
-	}
-	if duration <= 0 {
-		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
-		return nil
-	}
 
 	resultCh := make(chan madmin.NetperfResult)
 	go func() {
@@ -112,4 +141,22 @@ func mainSpeedTestNetperf(ctx *cli.Context, aliasedURL string) error {
 	<-done
 
 	return nil
+}
+
+func mainSupportPerfNet(ctx *cli.Context) error {
+	if len(ctx.Args()) != 1 {
+		cli.ShowCommandHelpAndExit(ctx, "net", 1) // last argument is exit code
+	}
+
+	duration, e := time.ParseDuration(ctx.String("duration"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse duration")
+		return nil
+	}
+	if duration <= 0 {
+		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
+		return nil
+	}
+
+	return doPerfNet(globalContext, ctx.Args().Get(0), duration)
 }

@@ -50,11 +50,73 @@ func mainAdminSpeedtest(ctx *cli.Context) error {
 	return nil
 }
 
+const (
+	perfObjectDurationDefault   = 10 * time.Second
+	perfObjectVerboseDefault    = false
+	perfObjectSizeDefault       = 64 * 1024 * 1024
+	perfObjectConcurrentDefault = 32
+	perfObjectBucketDefault     = ""
+)
+
+var supportPerfObjectFlags = []cli.Flag{
+	cli.StringFlag{
+		Name:  "duration",
+		Usage: "duration for each perf test is run",
+		Value: fmt.Sprintf("%ds", perfObjectDurationDefault/time.Second),
+	},
+	cli.BoolFlag{
+		Name:  "verbose, v",
+		Usage: "display per-server stats",
+	},
+	cli.StringFlag{
+		Name:  "size",
+		Usage: "size of the object used for uploads/downloads",
+		Value: humanize.IBytes(perfObjectSizeDefault),
+	},
+	cli.IntFlag{
+		Name:  "concurrent",
+		Usage: "number of concurrent requests per server",
+		Value: perfObjectConcurrentDefault,
+	},
+	cli.StringFlag{
+		Name:   "bucket",
+		Usage:  "provide a custom bucket name to use (NOTE: bucket must be created prior)",
+		Value:  perfObjectBucketDefault,
+		Hidden: true, // Hidden for now.
+	},
+}
+
+var supportPerfObjectCmd = cli.Command{
+	Name:            "object",
+	Usage:           "analyze object performance",
+	Action:          mainSupportPerfObject,
+	OnUsageError:    onUsageError,
+	Before:          setGlobalsFromContext,
+	Flags:           append(supportPerfObjectFlags, globalFlags...),
+	HideHelpCommand: true,
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [COMMAND] [FLAGS] TARGET
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+
+EXAMPLES:
+  1. Run object speed measurement with autotuning the concurrency to obtain maximum throughput and IOPs:
+     {{.Prompt}} {{.HelpName}} object myminio/
+  2. Run object speed measurement for 20 seconds with object size of 128MiB with autotuning the concurrency to obtain maximum throughput:
+     {{.Prompt}} {{.HelpName}} object myminio/ --duration 20s --size 128MiB
+`,
+}
+
 // Object speed test
 
 func (s speedTestResult) StringVerbose() (msg string) {
 	result := s.result
-	if globalPerfTestVerbose {
+	if s.verbose {
 		msg += "\n\n"
 		msg += "PUT:\n"
 		for _, node := range result.PUTStats.Servers {
@@ -93,7 +155,7 @@ func (s speedTestResult) JSON() string {
 	return string(JSONBytes)
 }
 
-func mainSpeedTestObject(ctx *cli.Context, aliasedURL string) error {
+func doPerfObject(ctx context.Context, aliasedURL string, duration time.Duration, size uint64, concurrent int, bucket string, autotune, verbose bool) error {
 	client, perr := newAdminClient(aliasedURL)
 	if perr != nil {
 		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
@@ -103,41 +165,12 @@ func mainSpeedTestObject(ctx *cli.Context, aliasedURL string) error {
 	ctxt, cancel := context.WithCancel(globalContext)
 	defer cancel()
 
-	duration, e := time.ParseDuration(ctx.String("duration"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse duration")
-		return nil
-	}
-	if duration <= 0 {
-		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
-		return nil
-	}
-	size, e := humanize.ParseBytes(ctx.String("size"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse object size")
-		return nil
-	}
-	if size < 0 {
-		fatalIf(errInvalidArgument(), "size is expected to be atleast 0 bytes")
-		return nil
-	}
-	concurrent := ctx.Int("concurrent")
-	if concurrent <= 0 {
-		fatalIf(errInvalidArgument(), "concurrency cannot be '0' or negative")
-		return nil
-	}
-	globalPerfTestVerbose = ctx.Bool("verbose")
-
-	// Turn-off autotuning only when "concurrent" is specified
-	// in all other scenarios keep auto-tuning on.
-	autotune := !ctx.IsSet("concurrent")
-
 	resultCh, err := client.Speedtest(ctxt, madmin.SpeedtestOpts{
 		Size:        int(size),
 		Duration:    duration,
 		Concurrency: concurrent,
 		Autotune:    autotune,
-		Bucket:      ctx.String("bucket"), // This is a hidden flag.
+		Bucket:      bucket, // This is a hidden flag.
 	})
 	fatalIf(probe.NewError(err), "Failed to execute performance test")
 
@@ -167,15 +200,56 @@ func mainSpeedTestObject(ctx *cli.Context, aliasedURL string) error {
 		var result madmin.SpeedTestResult
 		for result = range resultCh {
 			p.Send(speedTestResult{
-				result: &result,
+				result:  &result,
+				verbose: verbose,
 			})
 		}
 		p.Send(speedTestResult{
-			result: &result,
-			final:  true,
+			result:  &result,
+			verbose: verbose,
+			final:   true,
 		})
 	}()
 
 	<-done
 	return nil
+}
+
+func mainSupportPerfObject(ctx *cli.Context) error {
+	if len(ctx.Args()) != 1 {
+		cli.ShowCommandHelpAndExit(ctx, "object", 1) // last argument is exit code
+	}
+
+	duration, e := time.ParseDuration(ctx.String("duration"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse duration")
+		return nil
+	}
+	if duration <= 0 {
+		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
+		return nil
+	}
+	size, e := humanize.ParseBytes(ctx.String("size"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse object size")
+		return nil
+	}
+	if size < 0 {
+		fatalIf(errInvalidArgument(), "size is expected to be atleast 0 bytes")
+		return nil
+	}
+	concurrent := ctx.Int("concurrent")
+	if concurrent <= 0 {
+		fatalIf(errInvalidArgument(), "concurrency cannot be '0' or negative")
+		return nil
+	}
+
+	// Turn-off autotuning only when "concurrent" is specified
+	// in all other scenarios keep auto-tuning on.
+	autotune := !ctx.IsSet("concurrent")
+
+	verbose := ctx.Bool("verbose")
+	bucket := ctx.String("bucket")
+
+	return doPerfObject(globalContext, ctx.Args().Get(0), duration, size, concurrent, bucket, autotune, verbose)
 }

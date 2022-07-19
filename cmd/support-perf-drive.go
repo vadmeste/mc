@@ -30,37 +30,63 @@ import (
 	"github.com/minio/pkg/console"
 )
 
-func mainSpeedTestDrive(ctx *cli.Context, aliasedURL string) error {
+const (
+	perfDriveFileSizeDefault  = 1024 * 1024 * 1024
+	perfDriveBlockSizeDefault = 4 * 1024 * 1024
+	perfDriveSerialDefault    = false
+)
+
+var supportPerfDriveFlags = []cli.Flag{
+	// Drive test specific flags.
+	cli.StringFlag{
+		Name:  "filesize",
+		Usage: "total amount of data read/written to each drive",
+		Value: humanize.IBytes(perfDriveFileSizeDefault),
+	},
+	cli.StringFlag{
+		Name:  "blocksize",
+		Usage: "read/write block size",
+		Value: humanize.IBytes(perfDriveBlockSizeDefault),
+	},
+	cli.BoolFlag{
+		Name:  "serial",
+		Usage: "run tests on drive(s) one-by-one",
+	},
+}
+
+var supportPerfDriveCmd = cli.Command{
+	Name:            "drive",
+	Usage:           "analyze drive performance",
+	Action:          mainSupportPerfDrive,
+	OnUsageError:    onUsageError,
+	Before:          setGlobalsFromContext,
+	Flags:           append(supportPerfDriveFlags, globalFlags...),
+	HideHelpCommand: true,
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [COMMAND] [FLAGS] TARGET
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+
+EXAMPLES:
+  1. Run all speed measurement tests in 'myminio' cluster
+     {{.Prompt}} {{.HelpName}} myminio/
+`,
+}
+
+func doPerfDrive(ctx context.Context, aliasedURL string, blocksize, filesize uint64, serial bool) error {
 	client, perr := newAdminClient(aliasedURL)
 	if perr != nil {
 		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
 		return nil
 	}
 
-	ctxt, cancel := context.WithCancel(globalContext)
+	ctxt, cancel := context.WithCancel(ctx)
 	defer cancel()
-
-	blocksize, e := humanize.ParseBytes(ctx.String("blocksize"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse blocksize")
-		return nil
-	}
-	if blocksize < 0 {
-		fatalIf(errInvalidArgument(), "blocksize cannot be <= 0")
-		return nil
-	}
-
-	filesize, e := humanize.ParseBytes(ctx.String("filesize"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse filesize")
-		return nil
-	}
-	if filesize < 0 {
-		fatalIf(errInvalidArgument(), "filesize cannot be <= 0")
-		return nil
-	}
-
-	serial := ctx.Bool("serial")
 
 	resultCh, e := client.DriveSpeedtest(ctxt, madmin.DriveSpeedTestOpts{
 		Serial:    serial,
@@ -111,4 +137,34 @@ func mainSpeedTestDrive(ctx *cli.Context, aliasedURL string) error {
 	<-done
 
 	return nil
+}
+
+func mainSupportPerfDrive(ctx *cli.Context) error {
+	if len(ctx.Args()) != 1 {
+		cli.ShowCommandHelpAndExit(ctx, "drive", 1) // last argument is exit code
+	}
+
+	blocksize, e := humanize.ParseBytes(ctx.String("blocksize"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse blocksize")
+		return nil
+	}
+	if blocksize < 0 {
+		fatalIf(errInvalidArgument(), "blocksize cannot be <= 0")
+		return nil
+	}
+
+	filesize, e := humanize.ParseBytes(ctx.String("filesize"))
+	if e != nil {
+		fatalIf(probe.NewError(e), "Unable to parse filesize")
+		return nil
+	}
+	if filesize < 0 {
+		fatalIf(errInvalidArgument(), "filesize cannot be <= 0")
+		return nil
+	}
+
+	serial := ctx.Bool("serial")
+
+	return doPerfDrive(globalContext, ctx.Args().Get(0), blocksize, filesize, serial)
 }

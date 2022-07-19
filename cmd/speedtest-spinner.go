@@ -42,6 +42,7 @@ type speedTestUI struct {
 
 type speedTestResult struct {
 	final   bool
+	verbose bool
 	result  *madmin.SpeedTestResult
 	nresult *madmin.NetperfResult
 	dresult []madmin.DriveSpeedTestResult
