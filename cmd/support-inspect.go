@@ -153,7 +153,7 @@ func mainSupportInspect(ctx *cli.Context) error {
 		console.Infoln("Your shell is auto determined as '" + shellName + "', wildcard patterns are only supported with 'bash' SHELL.")
 	}
 
-	key, r, ierr := client.Inspect(context.Background(), madmin.InspectOptions{
+	proto, key, r, ierr := client.Inspect(context.Background(), madmin.InspectOptions{
 		Volume: bucket,
 		File:   prefix,
 	})
@@ -166,16 +166,28 @@ func mainSupportInspect(ctx *cli.Context) error {
 	ext := "enc"
 	if decrypt {
 		ext = "zip"
-		r = decryptInspect(key, r)
 	}
 
-	// Copy zip content to target download file
-	_, e = io.Copy(tmpFile, r)
-	fatalIf(probe.NewError(e), "Unable to download file data.")
+	if !decrypt {
+		// Copy zip content to target download file
+		_, e = io.Copy(tmpFile, r)
+		fatalIf(probe.NewError(e), "Unable to download file data.")
+	} else {
+		switch proto {
+		case 1:
+			e = decryptInspectV0(r, key, tmpFile)
+		case 2:
+			e = decryptInspectV1(r, key, tmpFile)
+		default:
+			e = fmt.Errorf("unknown inspect format, protocol: %d", key[0])
+		}
+	}
 
 	// Close everything
 	r.Close()
 	tmpFile.Close()
+
+	fatalIf(probe.NewError(e), "Unable to fetch the inspect data")
 
 	// Create an id that is also crc.
 	var id [4]byte
@@ -205,18 +217,46 @@ func mainSupportInspect(ctx *cli.Context) error {
 		return nil
 	}
 
+	keyHex := ""
+	if !decrypt {
+		keyHex = hex.EncodeToString(id[:]) + hex.EncodeToString(key[:])
+	}
+
 	printMsg(inspectMessage{
 		File: downloadPath,
-		Key:  hex.EncodeToString(id[:]) + hex.EncodeToString(key[:]),
+		Key:  keyHex,
 	})
 	return nil
 }
 
-func decryptInspect(key [32]byte, r io.Reader) io.ReadCloser {
+func decryptInspectV0(r io.Reader, key [32]byte, output *os.File) error {
 	stream, err := sio.AES_256_GCM.Stream(key[:])
-	fatalIf(probe.NewError(err), "Unable to initiate decryption")
+	if err != nil {
+		return err
+	}
 
 	// Zero nonce, we only use each key once, and 32 bytes is plenty.
 	nonce := make([]byte, stream.NonceSize())
-	return ioutil.NopCloser(stream.DecryptReader(r, nonce, nil))
+	decr := ioutil.NopCloser(stream.DecryptReader(r, nonce, nil))
+
+	// Copy zip content to target download file
+	_, err = io.Copy(output, decr)
+	if err != nil {
+		return err
+	}
+	// Close everything
+	decr.Close()
+	return nil
+}
+
+func decryptInspectV1(r io.Reader, key [32]byte, output *os.File) error {
+	/*
+		stream, err := sio.AES_256_GCM.Stream(key[:])
+			fatalIf(probe.NewError(err), "Unable to initiate decryption")
+
+			// Zero nonce, we only use each key once, and 32 bytes is plenty.
+			nonce := make([]byte, stream.NonceSize())
+			return ioutil.NopCloser(stream.DecryptReader(r, nonce, nil))
+	*/
+	return nil
 }
