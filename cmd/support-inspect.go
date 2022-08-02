@@ -18,6 +18,8 @@
 package cmd
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -229,7 +231,7 @@ func mainSupportInspect(ctx *cli.Context) error {
 	return nil
 }
 
-func decryptInspectV0(r io.Reader, key [32]byte, output *os.File) error {
+func decryptInspectV0(r io.Reader, key []byte, output *os.File) error {
 	stream, err := sio.AES_256_GCM.Stream(key[:])
 	if err != nil {
 		return err
@@ -249,14 +251,93 @@ func decryptInspectV0(r io.Reader, key [32]byte, output *os.File) error {
 	return nil
 }
 
-func decryptInspectV1(r io.Reader, key [32]byte, output *os.File) error {
-	/*
-		stream, err := sio.AES_256_GCM.Stream(key[:])
-			fatalIf(probe.NewError(err), "Unable to initiate decryption")
+func decryptInspectV1(r io.Reader, key []byte, output *os.File) error {
+	tmpFile, e := ioutil.TempFile("", "mc-inspect-intermediate")
+	if e != nil {
+		return e
+	}
+	_, e = io.Copy(tmpFile, r)
+	if e != nil {
+		return e
+	}
 
-			// Zero nonce, we only use each key once, and 32 bytes is plenty.
-			nonce := make([]byte, stream.NonceSize())
-			return ioutil.NopCloser(stream.DecryptReader(r, nonce, nil))
-	*/
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zreader, err := zip.OpenReader(tmpFile.Name())
+	if err != nil {
+		return err
+	}
+	defer zreader.Close()
+
+	zwriter := zip.NewWriter(output)
+	defer zwriter.Close()
+
+	var b = bytes.NewBuffer([]byte{})
+
+	// Look for encryption.meta first
+	for _, f := range zreader.File {
+		if f.Name == "encryption.meta" {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			b.Grow(int(f.UncompressedSize64))
+			_, err = io.Copy(b, rc)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	nonceMap := make(map[string][]byte)
+	err = json.Unmarshal(b.Bytes(), &nonceMap)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range zreader.File {
+		header, err := zip.FileInfoHeader(f.FileInfo())
+		if err != nil {
+			return err
+		}
+		// set compression
+		header.Method = zip.Deflate
+		header.Name = f.Name // Use the full name
+
+		headerWriter, err := zwriter.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+		if f.FileInfo().IsDir() {
+			continue
+		}
+
+		var r io.Reader
+
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+
+		nonce, ok := nonceMap[f.Name]
+		if ok {
+			stream, err := sio.AES_128_GCM.Stream(key[:])
+			if err != nil {
+				return err
+			}
+			r = io.Reader(stream.DecryptReader(rc, nonce, nil))
+		} else {
+			r = io.Reader(rc)
+		}
+
+		_, err = io.Copy(headerWriter, r)
+		if err != nil {
+			return err
+		}
+
+		rc.Close()
+	}
+
 	return nil
 }
