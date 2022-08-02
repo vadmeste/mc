@@ -42,8 +42,8 @@ import (
 
 var supportInspectFlags = []cli.Flag{
 	cli.BoolFlag{
-		Name:  "encrypt",
-		Usage: "encrypt content with one time key for confidential data",
+		Name:  "decrypt",
+		Usage: "decrypt content with one time key for confidential data",
 	},
 	cli.StringFlag{
 		Name:  "export",
@@ -81,6 +81,33 @@ EXAMPLES:
 `,
 }
 
+type inspectMessage struct {
+	File string `json:"file"`
+	Key  string `json:"key,omitempty"`
+}
+
+// Colorized message for console printing.
+func (t inspectMessage) String() string {
+	msg := ""
+	if t.Key == "" {
+		msg += fmt.Sprintf("File data successfully downloaded as %s\n", console.Colorize("File", t.File))
+	} else {
+		msg += fmt.Sprintf("Encrypted file data successfully downloaded as %s\n", console.Colorize("File", t.File))
+		msg += fmt.Sprintf("Decryption key: %s\n\n", console.Colorize("Key", t.Key))
+
+		msg += fmt.Sprintf("The decryption key will ONLY be shown here. It cannot be recovered.\n")
+		msg += fmt.Sprintf("The encrypted file can safely be shared without the decryption key.\n")
+		msg += fmt.Sprintf("Even with the decryption key, data stored with encryption cannot be accessed.\n")
+	}
+	return msg
+}
+
+func (t inspectMessage) JSON() string {
+	jsonMessageBytes, e := json.MarshalIndent(t, "", " ")
+	fatalIf(probe.NewError(e), "Unable to marshal into JSON.")
+	return string(jsonMessageBytes)
+}
+
 func checkSupportInspectSyntax(ctx *cli.Context) {
 	if len(ctx.Args()) != 1 {
 		cli.ShowCommandHelpAndExit(ctx, "inspect", 1) // last argument is exit code
@@ -89,6 +116,11 @@ func checkSupportInspectSyntax(ctx *cli.Context) {
 	if ctx.IsSet("export") && globalJSON {
 		fatalIf(errInvalidArgument(), "--export=type cannot be specified with --json flag")
 	}
+
+	if v := ctx.String("export"); v != "" && v != "json" && v != "djson" {
+		fatalIf(errInvalidArgument().Trace("export="+v), "Unable to export inspect data")
+	}
+
 }
 
 // mainSupportInspect - the entry function of inspect command
@@ -99,7 +131,7 @@ func mainSupportInspect(ctx *cli.Context) error {
 	// Get the alias parameter from cli
 	args := ctx.Args()
 	aliasedURL := args.Get(0)
-	encrypt := ctx.Bool("encrypt")
+	decrypt := ctx.Bool("decrypt") || ctx.IsSet("export")
 
 	console.SetColor("File", color.New(color.FgWhite, color.Bold))
 	console.SetColor("Key", color.New(color.FgHiRed, color.Bold))
@@ -132,7 +164,7 @@ func mainSupportInspect(ctx *cli.Context) error {
 	fatalIf(probe.NewError(e), "Unable to download file data.")
 
 	ext := "enc"
-	if !encrypt || ctx.IsSet("export") {
+	if decrypt {
 		ext = "zip"
 		r = decryptInspect(key, r)
 	}
@@ -168,42 +200,15 @@ func mainSupportInspect(ctx *cli.Context) error {
 			inspectToExportType(downloadPath, false)
 		case "djson":
 			inspectToExportType(downloadPath, true)
-		default:
-			os.Remove(downloadPath)
-			fatalIf(errInvalidArgument().Trace("export="+v), "Unable to export inspect data")
 		}
 		os.Remove(downloadPath)
 		return nil
 	}
 
-	hexKey := hex.EncodeToString(id[:]) + hex.EncodeToString(key[:])
-	if !globalJSON {
-		if !encrypt {
-			console.Infof("File data successfully downloaded as %s\n", console.Colorize("File", downloadPath))
-			return nil
-		}
-		console.Infof("Encrypted file data successfully downloaded as %s\n", console.Colorize("File", downloadPath))
-		console.Infof("Decryption key: %s\n\n", console.Colorize("Key", hexKey))
-
-		console.Info("The decryption key will ONLY be shown here. It cannot be recovered.\n")
-		console.Info("The encrypted file can safely be shared without the decryption key.\n")
-		console.Info("Even with the decryption key, data stored with encryption cannot be accessed.\n")
-		return nil
-	}
-
-	v := struct {
-		File string `json:"file"`
-		Key  string `json:"key,omitempty"`
-	}{
+	printMsg(inspectMessage{
 		File: downloadPath,
-		Key:  hexKey,
-	}
-	if !encrypt {
-		v.Key = ""
-	}
-	b, e := json.Marshal(v)
-	fatalIf(probe.NewError(e), "Unable to serialize data")
-	console.Println(string(b))
+		Key:  hex.EncodeToString(id[:]) + hex.EncodeToString(key[:]),
+	})
 	return nil
 }
 
