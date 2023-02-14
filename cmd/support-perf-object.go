@@ -91,6 +91,7 @@ func mainAdminSpeedTestObject(ctx *cli.Context, aliasedURL string, outCh chan<- 
 		Concurrency: concurrent,
 		Autotune:    autotune,
 		Bucket:      ctx.String("bucket"), // This is a hidden flag.
+		KeepData:    ctx.Bool("keep-data"),
 	})
 
 	if globalJSON {
