@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"context"
+	"math"
 	"os"
 	"time"
 
@@ -46,37 +47,19 @@ func mainAdminSpeedtest(_ *cli.Context) error {
 }
 
 func mainAdminSpeedTestObject(ctx *cli.Context, aliasedURL string, outCh chan<- PerfTestResult) error {
-	client, perr := newAdminClient(aliasedURL)
-	if perr != nil {
-		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
-		return nil
-	}
-
 	ctxt, cancel := context.WithCancel(globalContext)
 	defer cancel()
 
 	duration, e := time.ParseDuration(ctx.String("duration"))
 	if e != nil {
 		fatalIf(probe.NewError(e), "Unable to parse duration")
-		return nil
 	}
 	if duration <= 0 {
 		fatalIf(errInvalidArgument(), "duration cannot be 0 or negative")
-		return nil
-	}
-	size, e := humanize.ParseBytes(ctx.String("size"))
-	if e != nil {
-		fatalIf(probe.NewError(e), "Unable to parse object size")
-		return nil
-	}
-	if size <= 0 {
-		fatalIf(errInvalidArgument(), "size is expected to be more than 0 bytes")
-		return nil
 	}
 	concurrent := ctx.Int("concurrent")
 	if concurrent <= 0 {
 		fatalIf(errInvalidArgument(), "concurrency cannot be '0' or negative")
-		return nil
 	}
 	globalPerfTestVerbose = ctx.Bool("verbose")
 
@@ -84,14 +67,46 @@ func mainAdminSpeedTestObject(ctx *cli.Context, aliasedURL string, outCh chan<- 
 	// in all other scenarios keep auto-tuning on.
 	autotune := !ctx.IsSet("concurrent")
 
-	resultCh, e := client.Speedtest(ctxt, madmin.SpeedtestOpts{
-		Size:        int(size),
-		Duration:    duration,
-		Concurrency: concurrent,
-		Autotune:    autotune,
-		Bucket:      ctx.String("bucket"), // This is a hidden flag.
-		NoClear:     ctx.Bool("noclear"),
-	})
+	sizes := []int{}
+	if sizeStr := ctx.String("size"); sizeStr != "" {
+		size, e := humanize.ParseBytes(ctx.String("size"))
+		if e != nil {
+			fatalIf(probe.NewError(e), "Unable to parse object size")
+		}
+		if size <= 0 {
+			fatalIf(errInvalidArgument(), "size is expected to be more than 0 bytes")
+		}
+		if size > math.MaxInt {
+			fatalIf(errInvalidArgument(), "size value cannot be larger than %s", humanize.IBytes(math.MaxInt))
+		}
+		sizes = []int{int(size)}
+	} else {
+		sizes = []int{supportPerfThroughputSize, supportPerfIOPSSize}
+	}
+
+	for i := range sizes {
+		opts := madmin.SpeedtestOpts{
+			Size:        sizes[i],
+			Duration:    duration,
+			Concurrency: concurrent,
+			Autotune:    autotune,
+			Bucket:      ctx.String("bucket"), // This is a hidden flag.
+			NoClear:     ctx.Bool("noclear"),
+		}
+		speedTestObject(ctxt, aliasedURL, opts, outCh)
+	}
+
+	return nil
+}
+
+func speedTestObject(ctx context.Context, aliasedURL string, opts madmin.SpeedtestOpts, outCh chan<- PerfTestResult) error {
+	client, perr := newAdminClient(aliasedURL)
+	if perr != nil {
+		fatalIf(perr.Trace(aliasedURL), "Unable to initialize admin client.")
+		return nil
+	}
+
+	resultCh, e := client.Speedtest(ctx, opts)
 
 	if globalJSON {
 		if e != nil {

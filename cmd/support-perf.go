@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
@@ -33,11 +34,15 @@ import (
 	"github.com/minio/pkg/v2/console"
 )
 
+const (
+	supportPerfThroughputSize = 64 * 1024 * 1024
+	supportPerfIOPSSize       = 4 * 1024
+)
+
 var supportPerfFlags = append([]cli.Flag{
 	cli.StringFlag{
 		Name:  "size",
 		Usage: "size of the object used for uploads/downloads",
-		Value: "64MiB",
 	},
 	cli.BoolFlag{
 		Name:  "verbose, v",
@@ -244,14 +249,6 @@ func objectTestVerboseResult(result *madmin.SpeedTestResult) (msg string) {
 		}
 		msg += "\n"
 	}
-
-	return msg
-}
-
-func objectTestShortResult(result *madmin.SpeedTestResult) (msg string) {
-	msg += fmt.Sprintf("MinIO %s, %d servers, %d drives, %s objects, %d threads",
-		result.Version, result.Servers, result.Disks,
-		humanize.IBytes(uint64(result.Size)), result.Concurrent)
 
 	return msg
 }
@@ -473,14 +470,19 @@ func execSupportPerf(ctx *cli.Context, aliasedURL, perfType string) {
 		return
 	}
 
+	fmt.Println("")
+
+	regInfo := getClusterRegInfo(getAdminInfo(aliasedURL), alias)
+	console.Infof("MinIO %s, %d servers, %d drives\n",
+		regInfo.Info.MinioVersion, regInfo.Info.NoOfServers, regInfo.Info.NoOfDrives)
+
 	// If results still not available, don't write anything
 	if len(results) == 0 {
-		console.Fatalln("No performance reports were captured, please report this issue")
+		console.Fatalln("No performance reports were captured, please report this issue.")
 	} else {
 		resultFileNamePfx := fmt.Sprintf("%s-perf_%s", filepath.Clean(alias), UTCNow().Format("20060102150405"))
 		resultFileName := resultFileNamePfx + ".json"
 
-		regInfo := getClusterRegInfo(getAdminInfo(aliasedURL), alias)
 		tmpFileName, e := zipPerfResult(convertPerfResults(results), resultFileName, regInfo)
 		fatalIf(probe.NewError(e), "Unable to generate zip file from performance results")
 
@@ -514,7 +516,18 @@ func savePerfResultFile(tmpFileName, resultFileNamePfx string) {
 func runPerfTests(ctx *cli.Context, aliasedURL, perfType string) []PerfTestResult {
 	resultCh := make(chan PerfTestResult)
 	results := []PerfTestResult{}
-	defer close(resultCh)
+
+	var wg sync.WaitGroup
+
+	if !globalJSON {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := range resultCh {
+				results = append(results, r)
+			}
+		}()
+	}
 
 	tests := []string{perfType}
 	if len(perfType) == 0 {
@@ -537,11 +550,10 @@ func runPerfTests(ctx *cli.Context, aliasedURL, perfType string) []PerfTestResul
 		default:
 			showCommandHelpAndExit(ctx, 1) // last argument is exit code
 		}
-
-		if !globalJSON {
-			results = append(results, <-resultCh)
-		}
 	}
+
+	close(resultCh)
+	wg.Wait()
 
 	return results
 }

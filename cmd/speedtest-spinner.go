@@ -119,10 +119,27 @@ func (m *speedTestUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func perfObjectPrettyTitle(r PerfTestResult) (title string) {
+	title = r.Type.Name()
+	if r.Type == ObjectPerfTest {
+		var sub []string
+		if r.ObjectResult.Size > 0 {
+			sub = append(sub, fmt.Sprintf("size: %s", humanize.IBytes(uint64(r.ObjectResult.Size))))
+		}
+		if r.ObjectResult.Concurrent > 0 {
+			sub = append(sub, fmt.Sprintf("concurrency: %d", r.ObjectResult.Concurrent))
+		}
+		if len(sub) > 0 {
+			title += fmt.Sprintf(" (%s)", strings.Join(sub, ", "))
+		}
+	}
+	return
+}
+
 func (m *speedTestUI) View() string {
 	// Quit when there is an error
 	if m.result.Err != "" {
-		return fmt.Sprintf("\n%s: %s (Err: %s)\n", m.result.Type.Name(), crossTickCell, m.result.Err)
+		return fmt.Sprintf("\n%s: %s (Err: %s)\n", perfObjectPrettyTitle(m.result), crossTickCell, m.result.Err)
 	}
 
 	var s strings.Builder
@@ -156,9 +173,9 @@ func (m *speedTestUI) View() string {
 
 	// Print the spinner
 	if !m.quitting {
-		s.WriteString(fmt.Sprintf("\n%s: %s\n\n", m.result.Type.Name(), m.spinner.View()))
+		s.WriteString(fmt.Sprintf("\n%s: %s\n\n", perfObjectPrettyTitle(m.result), m.spinner.View()))
 	} else {
-		s.WriteString(fmt.Sprintf("\n%s: %s\n\n", m.result.Type.Name(), m.spinner.Style.Render(tickCell)))
+		s.WriteString(fmt.Sprintf("\n%s: %s\n\n", perfObjectPrettyTitle(m.result), m.spinner.Style.Render(tickCell)))
 	}
 
 	if ores != nil {
@@ -192,7 +209,6 @@ func (m *speedTestUI) View() string {
 		table.Render()
 
 		if m.quitting {
-			s.WriteString("\n" + objectTestShortResult(ores))
 			if globalPerfTestVerbose {
 				s.WriteString("\n\n")
 				s.WriteString(objectTestVerboseResult(ores))
