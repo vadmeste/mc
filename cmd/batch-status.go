@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
+	json "github.com/minio/colorjson"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/pkg/v2/console"
@@ -48,6 +50,34 @@ func checkBatchStatusSyntax(ctx *cli.Context) {
 	}
 }
 
+type batchStatusMsg struct {
+	m madmin.JobMetric
+}
+
+func (s batchStatusMsg) JSON() string {
+	buf := &bytes.Buffer{}
+	enc := json.NewEncoder(buf)
+	enc.SetIndent("", " ")
+	enc.SetEscapeHTML(false)
+
+	fatalIf(probe.NewError(enc.Encode(s)), "Unable to marshal into JSON.")
+	return buf.String()
+}
+
+func (s batchStatusMsg) String() string {
+	var b strings.Builder
+
+	addLine := func(prefix string, value interface{}) {
+		b.WriteString(prefix)
+		b.WriteString(" ")
+		b.WriteString(fmt.Sprint(value))
+		b.WriteString("\n")
+	}
+
+	renderBatchJobMetrics(s.m, addLine)
+	return b.String()
+}
+
 func mainBatchStatus(ctx *cli.Context) error {
 	checkBatchStatusSyntax(ctx)
 
@@ -66,7 +96,11 @@ func mainBatchStatus(ctx *cli.Context) error {
 	if nosuchJob {
 		e = nil
 		if !globalJSON {
-			console.Infoln("Unable to find an active job, attempting to list from previously run jobs")
+			console.Infoln("Unable to find an active job, attempting to list from previously run jobs..")
+			st, e := client.BatchJobStatus(ctxt, jobID)
+			fatalIf(probe.NewError(e), "Unable to lookup job status")
+			printMsg(batchStatusMsg{m: st.LastMetric})
+			return nil
 		}
 	}
 	fatalIf(probe.NewError(e), "Unable to lookup job status")
@@ -176,6 +210,37 @@ func (m *batchJobMetricsUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func renderBatchJobMetrics(m madmin.JobMetric, fn func(prefix string, value interface{})) {
+	switch m.JobType {
+	case string(madmin.BatchJobReplicate):
+		accElapsedTime := m.LastUpdate.Sub(m.StartTime)
+
+		fn("JobType: ", m.JobType)
+		fn("Objects: ", m.Replicate.Objects)
+		fn("FailedObjects: ", m.Replicate.ObjectsFailed)
+		if accElapsedTime > 0 {
+			bytesTransferredPerSec := float64(m.Replicate.BytesTransferred) / accElapsedTime.Seconds()
+			objectsPerSec := float64(int64(time.Second)*m.Replicate.Objects) / float64(accElapsedTime)
+			fn("Throughput: ", fmt.Sprintf("%s/s", humanize.IBytes(uint64(bytesTransferredPerSec))))
+			fn("IOPs: ", fmt.Sprintf("%.2f objs/s", objectsPerSec))
+		}
+		fn("Transferred: ", humanize.IBytes(uint64(m.Replicate.BytesTransferred)))
+		fn("Elapsed: ", accElapsedTime.String())
+		fn("CurrObjName: ", m.Replicate.Object)
+	case string(madmin.BatchJobExpire):
+		fn("JobType: ", m.JobType)
+		fn("Objects: ", m.Expired.Objects)
+		fn("FailedObjects: ", m.Expired.ObjectsFailed)
+		fn("CurrObjName: ", m.Expired.Object)
+
+		if !m.LastUpdate.IsZero() {
+			accElapsedTime := m.LastUpdate.Sub(m.StartTime)
+			fn("Elapsed: ", accElapsedTime.String())
+		}
+	}
+
+}
+
 func (m *batchJobMetricsUI) View() string {
 	var s strings.Builder
 
@@ -193,14 +258,6 @@ func (m *batchJobMetricsUI) View() string {
 	table.SetTablePadding("\t") // pad with tabs
 	table.SetNoWhiteSpace(true)
 
-	var data [][]string
-	addLine := func(prefix string, value interface{}) {
-		data = append(data, []string{
-			prefix,
-			whiteStyle.Render(fmt.Sprint(value)),
-		})
-	}
-
 	if !m.quitting {
 		s.WriteString(m.spinner.View())
 	} else {
@@ -212,35 +269,15 @@ func (m *batchJobMetricsUI) View() string {
 	}
 	s.WriteString("\n")
 
-	switch m.current.JobType {
-	case string(madmin.BatchJobReplicate):
-		accElapsedTime := m.current.LastUpdate.Sub(m.current.StartTime)
-
-		addLine("JobType: ", m.current.JobType)
-		addLine("Objects: ", m.current.Replicate.Objects)
-		addLine("Versions: ", m.current.Replicate.Objects)
-		addLine("FailedObjects: ", m.current.Replicate.ObjectsFailed)
-		if accElapsedTime > 0 {
-			bytesTransferredPerSec := float64(m.current.Replicate.BytesTransferred) / accElapsedTime.Seconds()
-			objectsPerSec := float64(int64(time.Second)*m.current.Replicate.Objects) / float64(accElapsedTime)
-			addLine("Throughput: ", fmt.Sprintf("%s/s", humanize.IBytes(uint64(bytesTransferredPerSec))))
-			addLine("IOPs: ", fmt.Sprintf("%.2f objs/s", objectsPerSec))
-		}
-		addLine("Transferred: ", humanize.IBytes(uint64(m.current.Replicate.BytesTransferred)))
-		addLine("Elapsed: ", accElapsedTime.String())
-		addLine("CurrObjName: ", m.current.Replicate.Object)
-	case string(madmin.BatchJobExpire):
-		addLine("JobType: ", m.current.JobType)
-		addLine("Objects: ", m.current.Expired.Objects)
-		addLine("FailedObjects: ", m.current.Expired.ObjectsFailed)
-		addLine("CurrObjName: ", m.current.Expired.Object)
-
-		if !m.current.LastUpdate.IsZero() {
-			accElapsedTime := m.current.LastUpdate.Sub(m.current.StartTime)
-			addLine("Elapsed: ", accElapsedTime.String())
-		}
-
+	var data [][]string
+	addLine := func(prefix string, value interface{}) {
+		data = append(data, []string{
+			prefix,
+			whiteStyle.Render(fmt.Sprint(value)),
+		})
 	}
+
+	renderBatchJobMetrics(m.current, addLine)
 
 	table.AppendBulk(data)
 	table.Render()
